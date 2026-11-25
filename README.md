@@ -37,4 +37,11 @@ Los laboratorios se identifican como simulaciones. El intérprete admite un subc
 
 Las cuentas, la sincronización entre dispositivos y los clústeres reales aislados se describen como ampliaciones en el [documento de arquitectura](docs/arquitectura.md).
 
+### Vista del clúster
+
+- Filtro por tipo: pulsa un tipo para mostrarlo u ocultarlo; doble clic para ver solo ese tipo. **Esencial** y **Todo** son preajustes.
+- Ratón: arrastrar gira, clic derecho o Mayús + arrastrar desplaza, la rueda hace zoom hacia el cursor y el doble clic acerca la cámara al recurso (en el fondo, la restablece).
+- Táctil: un dedo gira, dos dedos desplazan y hacen zoom.
+- Teclado (con la escena enfocada): flechas giran, Mayús + flechas desplazan, + y − hacen zoom, F centra lo seleccionado y 0 restablece.
+
 La escena 3D usa [three.js](https://threejs.org) (licencia MIT, copia en `dist/assets/three/LICENSE`).

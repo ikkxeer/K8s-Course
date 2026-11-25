@@ -1,6 +1,6 @@
 import {lessons,modules,modes,totalLessons} from './catalog.mjs';
 import {applyYaml,builderManifest,createCluster,errorStatus,eventsFor,execute,exportYaml,kinds,list,logsFor,markInspected,metricsFor,resourceKey,statusOf,validateGoals,goalHint,yamlOf} from './cluster.mjs';
-import {mountScene,resourceColor,resourceGlyph,visibleResources} from './scene.mjs';
+import {mountScene,resourceColor,resourceGlyph,visibleResources,detailKinds,kindOrder} from './scene.mjs';
 import {recordSuccess,stats} from './progress.mjs';
 import {unlockAchievements} from './achievements.mjs';
 import {celebrate} from './celebrate.mjs';
@@ -12,7 +12,7 @@ const defaultYaml='# Pega un manifiesto o carga uno desde el explorador.\n';
 const modeNames={academia:'Academia',...Object.fromEntries(modes.map(mode=>[mode.id,mode.title]))};
 const attributes={apiVersion:'apiVersion: v1',kind:'kind: Pod',metadata:'metadata:',name:'  name: demo',namespace:'  namespace: default',spec:'spec:',data:'data:',selector:'  selector:',replicas:'  replicas: 2',containers:'  containers:',image:'    image: nginx:1.27',ports:'  ports:'};
 const inspectorTabs=[['status','Estado'],['yaml','YAML'],['logs','Logs'],['events','Eventos'],['metrics','Métricas']];
-const toolButtons=[['zoom-in','Acercar','plus'],['zoom-out','Alejar','minus'],['pan','Desplazar cámara','move'],['camera','Restablecer cámara','rotate']];
+const toolButtons=[['zoom-in','Acercar (rueda del ratón)','plus'],['zoom-out','Alejar','minus'],['view-top','Vista desde arriba','grid'],['view-front','Vista frontal','layers'],['pan','Modo mover: arrastrar desplaza en vez de girar','move'],['camera','Restablecer cámara (doble clic en el fondo)','rotate']];
 const storedView=()=>{try{return localStorage.getItem('kubepath.vista')==='2d'?'2d':'3d';}catch{return '3d';}};
 const saveView=value=>{try{localStorage.setItem('kubepath.vista',value);}catch{}};
 const kindInfo={Cluster:'El conjunto completo de máquinas',Node:'Una máquina del clúster',Namespace:'Carpeta para separar recursos',Component:'Pieza interna del Control Plane',Deployment:'Gestiona las réplicas de una app',ReplicaSet:'Mantiene el número de Pods',Pod:'Tu contenedor en ejecución',Container:'Proceso dentro de un Pod',Service:'Dirección estable hacia los Pods',Ingress:'Entrada HTTP desde fuera',ConfigMap:'Configuración',Secret:'Datos sensibles',PersistentVolume:'Disco disponible',PersistentVolumeClaim:'Petición de disco',Role:'Conjunto de permisos',RoleBinding:'Asigna permisos a un usuario',NetworkPolicy:'Regla de red'};
@@ -45,7 +45,7 @@ function coach(state,lesson,done,attempts) {
   }
   if (attempts>2) return 'Compara un objetivo pendiente con el estado actual. Puedes repasar los campos en la práctica de YAML.';
   const goal=lesson.objectives[done.indexOf(false)];
-  if (goal?.rule==='inspect') return 'Selecciona un recurso en el explorador. En la vista Experto aparecen los componentes internos del clúster.';
+  if (goal?.rule==='inspect') return 'Selecciona un recurso en el explorador. Si no ves el tipo que buscas, actívalo en el filtro de tipos sobre la escena.';
   if (goal?.rule==='endpoints') return 'Compara el selector del Service con las etiquetas y la disponibilidad de los Pods.';
   if (goal?.rule==='available') return 'Compara las réplicas deseadas con las disponibles. Si difieren, revisa los eventos.';
   return 'Verifica el tipo, el namespace, el nombre y los campos del recurso que pide el primer objetivo pendiente.';
@@ -137,7 +137,9 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
   let history=[], historyIndex=0, checks=[], feedback='', success=false, helper=false, hintCount=0, credited=false, celebrateLater=null;
   let operation=null, revealAffected=false;
   const ruleKinds={secretKey:['Secret'],leastPrivilege:['Role','RoleBinding'],denyIngress:['NetworkPolicy'],route:['Ingress']};
-  const options={show:new Set(lesson.objectives.flatMap(goal=>[goal.type,...(ruleKinds[goal.rule]??[])]).filter(Boolean)),expert:lesson.id==='arquitectura',view:storedView(),namespace:'*',kind:'*',links:true,pan:false,hideErrors:lesson.category==='Incidencia'&&lesson.difficulty==='Avanzado'};
+  const showKinds=new Set(lesson.objectives.flatMap(goal=>[goal.type,...(ruleKinds[goal.rule]??[])]).filter(Boolean));
+  const essential=()=>new Set(detailKinds.filter(kind=>!showKinds.has(kind)));
+  const options={show:showKinds,hidden:lesson.id==='arquitectura'?new Set():essential(),expert:false,view:storedView(),namespace:'*',kind:'*',links:true,pan:false,hideErrors:lesson.category==='Incidencia'&&lesson.difficulty==='Avanzado'};
   const route=modules.flatMap(module=>module.lessons);
   const next=route[route.indexOf(lesson.id)+1];
   const back=['sandbox','constructor'].includes(mode)?'resumen':mode;
@@ -158,13 +160,15 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
     (survival?'<span class="tag amber">Etapa '+(stage+1)+' / '+phases.length+'</span>':'')+
         '</div></div>'+button('reset','Reiniciar','rotate')+'</div>'+
     '<div class="lab-workspace">'+guide+'<div class="lab-interaction"><section class="panel topology" aria-label="Topología 3D">'+
-    '<div class="topology-head">'+title('Vista del clúster','cluster')+'<div class="head-controls"><div class="segmented" aria-label="Tipo de vista"><button data-lab="view-3d" type="button">3D</button><button data-lab="view-2d" type="button">2D</button></div><div class="segmented" aria-label="Nivel de detalle"><button data-lab="basic" type="button" title="Solo lo esencial">Simple</button><button data-lab="expert" type="button" title="Incluye componentes internos">Detallado</button></div></div></div>'+
-    '<details class="scene-options"><summary>'+icon('filter',15)+' <span>Filtros y opciones</span></summary><div class="scene-filters"><select id="ns-filter" aria-label="Filtrar por namespace"></select><select id="kind-filter" aria-label="Filtrar por tipo"><option value="*">Todos los tipos</option>'+kinds.map(option).join('')+'</select></div><div class="scene-checks"><label><input type="checkbox" id="links-switch" checked> Mostrar relaciones</label><label><input type="checkbox" id="traffic-switch" checked> Animar tráfico</label></div></details>'+
-    '<div class="scene-stage"><canvas tabindex="0" aria-label="Escena 3D del clúster. Flechas para rotar, más y menos para acercar y alejar, 0 para restablecer. Explora los recursos en la lista."></canvas>'+
+    '<div class="topology-head">'+title('Vista del clúster','cluster')+'<div class="head-controls"><div class="segmented" aria-label="Tipo de vista"><button data-lab="view-3d" type="button">3D</button><button data-lab="view-2d" type="button">2D</button></div></div></div>'+
+    '<div class="scene-filter"><div class="kind-chips" id="kind-chips" role="group" aria-label="Tipos de recurso visibles. Pulsa para mostrar u ocultar; doble clic para ver solo ese tipo."></div>'+
+    '<div class="filter-tools"><select id="ns-filter" aria-label="Filtrar por namespace"></select><button type="button" class="filter-btn" data-lab="show-essential" title="Solo los recursos principales">Esencial</button><button type="button" class="filter-btn" data-lab="show-all" title="Mostrar todos los tipos">Todo</button>'+
+    '<details class="scene-more"><summary title="Más opciones de la vista" aria-label="Más opciones de la vista">'+icon('settings',15)+'</summary><div class="scene-checks"><label><input type="checkbox" id="links-switch" checked> Relaciones</label><label><input type="checkbox" id="traffic-switch" checked> Animar tráfico</label></div></details></div></div>'+
+    '<div class="scene-stage"><canvas tabindex="0" aria-label="Escena del clúster. Flechas: girar; Mayús y flechas: mover; más y menos: zoom; F: centrar lo seleccionado; 0: restablecer. Los recursos también están en el explorador."></canvas>'+
     '<div class="scene-tools">'+toolButtons.map(([action,label,symbol])=>'<button type="button" class="icon-btn" data-lab="'+action+'" title="'+label+'" aria-label="'+label+'">'+icon(symbol,17)+'</button>').join('')+'</div>'+
     '<div id="scene-hover" class="scene-hover" hidden></div></div>'+
     '<div class="scene-status"><div id="scene-operation" role="status" aria-live="polite"></div><button type="button" id="reveal-affected" class="text-link" data-lab="show-affected" hidden>Mostrar afectados</button><button type="button" id="clear-affected" class="icon-btn" data-lab="clear-affected" aria-label="Quitar resaltado" title="Quitar resaltado" hidden>'+icon('close',15)+'</button></div>'+
-    '<div class="scene-legend"><span id="kind-key" class="kind-key"></span><span id="scene-count"></span></div></section>'+
+    '<div class="scene-legend"><span id="scene-help" class="scene-help"></span><span id="scene-count"></span></div></section>'+
     '<div class="lab-tools"><section class="panel console" aria-label="Herramientas del laboratorio"><div class="tabs">'+tab('terminal','Terminal',current==='terminal','terminal')+tab('yaml','YAML',false,'code')+(builder?tab('builder','Constructor',true,'layers'):'')+'</div>'+
     terminalTemplate()+yamlTemplate()+(builder?builderTemplate():'')+'</section>'+
     '<section class="panel explorer" aria-label="Explorador de recursos"><div class="explorer-head">'+title('Explorador','layers')+'<button id="resource-back" class="text-link" type="button" data-lab="resources" hidden>Ver recursos</button></div><div id="explorer-content"></div></section></div></div></div>'+
@@ -198,7 +202,7 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
     clear.hidden=!operation;
     wrapper.dataset.effect=operation?.effect.type??'';
     if(!operation) {
-      bar.innerHTML=icon('info',16)+'<span>'+(options.view==='2d'?'Arrastra para mover la vista.':'Arrastra para girar.')+' Haz clic en un recurso para inspeccionarlo.</span>';
+      bar.innerHTML=icon('info',16)+'<span>Haz clic en un recurso para inspeccionarlo.</span>';
       bar.removeAttribute('title');
       reveal.hidden=true;
       return;
@@ -326,14 +330,28 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
       (lesson.xp?'<p class="hint-note">'+icon('info',13)+' Usar pistas no resta XP: solo pierdes el bonus de +25 %.</p>':'')+
       (attempts>2&&lesson.id!=='yaml'?'<a class="text-link" href="'+lessonUrl('yaml')+'">Repasar YAML</a>':'');
   }
+  function sameSet(a,b){return a.size===b.size&&[...a].every(item=>b.has(item));}
+  function drawKindChips() {
+    const inScope=item=>options.namespace==='*'||(item.kind==='Namespace'?item.metadata.name===options.namespace:!item.metadata.namespace||item.metadata.namespace===options.namespace);
+    const counts=new Map();
+    for (const item of list(state)) if (inScope(item)) counts.set(item.kind,(counts.get(item.kind)??0)+1);
+    const present=kindOrder.filter(kind=>counts.has(kind)), box=q('#kind-chips');
+    if ([...box.children].map(node=>node.dataset.kind).join()!==present.join())
+      box.innerHTML=present.map(kind=>'<button type="button" class="kchip" data-kind="'+kind+'" title="'+e((kindInfo[kind]??kind)+' · doble clic: ver solo este tipo')+'"><i style="--c:'+resourceColor({kind})+'"></i>'+e(kind)+'<small></small></button>').join('');
+    for (const node of box.children) {
+      node.setAttribute('aria-pressed',String(!options.hidden.has(node.dataset.kind)));
+      node.querySelector('small').textContent=counts.get(node.dataset.kind);
+    }
+    q('[data-lab="show-essential"]').setAttribute('aria-pressed',String(sameSet(options.hidden,essential())));
+    q('[data-lab="show-all"]').setAttribute('aria-pressed',String(!options.hidden.size));
+  }
   function refresh() {
     const namespaces=list(state,'Namespace').map(node=>node.metadata.name);
     if(options.namespace!=='*'&&!namespaces.includes(options.namespace)) options.namespace='*';
-    const ns=q('#ns-filter'), nsHtml='<option value="*">Todos los namespaces</option>'+namespaces.map(option).join('');
+    const ns=q('#ns-filter'), nsHtml='<option value="*">Namespace: todos</option>'+namespaces.map(option).join('');
     if(ns.innerHTML!==nsHtml) ns.innerHTML=nsHtml;
     ns.value=options.namespace;
-    q('#kind-filter').value=options.kind;
-    for(const [selector,pressed] of [['basic',!options.expert],['expert',options.expert],['pan',options.pan],['view-3d',options.view!=='2d'],['view-2d',options.view==='2d']]) q('[data-lab="'+selector+'"]').setAttribute('aria-pressed',String(pressed));
+    for(const [selector,pressed] of [['pan',options.pan],['view-3d',options.view!=='2d'],['view-2d',options.view==='2d']]) q('[data-lab="'+selector+'"]').setAttribute('aria-pressed',String(pressed));
     if(builder) {
       const node=q('#builder-namespace'), previous=node.value||state.activeNs;
       node.innerHTML=namespaces.map(option).join('');
@@ -347,7 +365,10 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
       return item && (revealAffected || operation.effect.type!=='write'&&scope(item));
     }));
     const visible=visibleResources(state,options);
-    q('#kind-key').innerHTML=[...new Set(visible.map(item=>item.kind))].map(kind=>'<span title="'+e(kindInfo[kind]??'')+'"><i style="background:'+resourceColor({kind})+'"></i>'+e(kind)+'</span>').join('');
+    drawKindChips();
+    const touch=matchMedia('(pointer: coarse)').matches;
+    q('#scene-help').textContent=touch?(options.view==='2d'?'Un dedo: mover · dos dedos: zoom · doble toque: acercar':'Un dedo: girar · dos dedos: mover y zoom · doble toque: acercar')
+      :(options.view==='2d'?'Arrastra: mover · rueda: zoom · doble clic: acercar':'Arrastra: girar · clic derecho o Mayús: mover · rueda: zoom · doble clic: acercar');
     q('#scene-count').textContent=visible.length+' '+(visible.length===1?'recurso':'recursos');
     q('.scene-stage').dataset.view=options.view;
     scene.update(state,options,selected,operation);
@@ -411,7 +432,7 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
     editor=firstYaml;
     history=[]; historyIndex=0; feedback='';success=false;helper=false;hintCount=0;
     setOperation(null,'');
-    Object.assign(options,{namespace:'*',kind:'*',links:true,pan:false});
+    Object.assign(options,{namespace:'*',kind:'*',links:true,pan:false,hidden:lesson.id==='arquitectura'?new Set():essential()});
     q('#links-switch').checked=true;
     q('#traffic-switch').checked=true;
     scene.setAnimation(true);
@@ -438,6 +459,11 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
     const a=document.createElement('a');a.href=url;a.download='kubepath-manifiestos.yaml';a.click();
     setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
+  root.addEventListener('dblclick',event=>{
+    const kind=event.target.closest('[data-kind]')?.dataset.kind;
+    if(!kind) return;
+    options.hidden=new Set(kindOrder.filter(item=>item!==kind));selected=null;refresh();
+  },{signal});
   root.addEventListener('click',event=>{
     const target=event.target;
     const key=target.closest('[data-resource]')?.dataset.resource;
@@ -450,7 +476,11 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
       q('[data-tab="'+tabId+'"]').focus({preventScroll:true});
     } else if(tabId) {current=tabId;drawTools();}
     if(action==='resources') {selected=null;refresh();q('[data-resource]')?.focus({preventScroll:true});}
-    if(action==='basic'||action==='expert') {options.expert=action==='expert';revealAffected=false;refresh();}
+    const chip=target.closest('[data-kind]')?.dataset.kind;
+    if(chip) {options.hidden.has(chip)?options.hidden.delete(chip):options.hidden.add(chip);if(selected&&state.resources[selected]?.kind===chip) selected=null;revealAffected=false;refresh();}
+    if(action==='show-all') {options.hidden=new Set();refresh();}
+    if(action==='show-essential') {options.hidden=essential();refresh();}
+    if(action==='view-top'||action==='view-front') scene.setView(action==='view-top'?'top':'front');
     if(action==='pan') {options.pan=!options.pan;refresh();}
     if(action==='view-3d'||action==='view-2d') {options.view=action==='view-2d'?'2d':'3d';saveView(options.view);scene.reset();refresh();}
     if(action==='use-cmd') {current='terminal';drawTools();command.value=target.closest('[data-cmd]').dataset.cmd;command.focus();}
@@ -493,7 +523,7 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
   },{signal});
   root.addEventListener('change',event=>{
     const {id,value,checked}=event.target;
-    if(id==='ns-filter'||id==='kind-filter') {options[id==='ns-filter'?'namespace':'kind']=value;selected=null;revealAffected=false;refresh();}
+    if(id==='ns-filter') {options.namespace=value;selected=null;revealAffected=false;refresh();}
     if(id==='links-switch') {options.links=checked;refresh();}
     if(id==='traffic-switch') scene.setAnimation(checked);
     if(id==='yaml-complete'&&value) {

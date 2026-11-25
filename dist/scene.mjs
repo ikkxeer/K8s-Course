@@ -48,11 +48,14 @@ const alpha=(color,opacity)=>color+Math.round(clamp(opacity,0,1)*255).toString(1
 export const resourceColor=item=>kinds[item.kind]?.color??'#a79fff';
 export const resourceGlyph=item=>glyphNames[item.kind]??'?';
 
-export function visibleResources(state,{expert=false,namespace='*',kind='*',reveal=new Set(),show=new Set()}={}) {
+export const detailKinds=Object.keys(kinds).filter(kind=>kinds[kind].expert);
+export const kindOrder=order;
+export function visibleResources(state,{expert=false,namespace='*',kind='*',reveal=new Set(),show=new Set(),hidden=null}={}) {
   return list(state).filter(item=>{
     if (reveal.has(resourceKey(item))) return true;
     if (kind!=='*' && item.kind!==kind) return false;
-    if (!expert && kind==='*' && kinds[item.kind]?.expert && !show.has(item.kind)) return false;
+    if (hidden) {if (hidden.has(item.kind)) return false;}
+    else if (!expert && kind==='*' && kinds[item.kind]?.expert && !show.has(item.kind)) return false;
     if (namespace!=='*' && item.kind==='Namespace') return item.metadata.name===namespace;
     return namespace==='*' || !item.metadata.namespace || item.metadata.namespace===namespace;
   }).sort((a,b)=>order.indexOf(a.kind)-order.indexOf(b.kind) || a.metadata.name.localeCompare(b.metadata.name));
@@ -167,7 +170,38 @@ export function mountScene(canvas,{onSelect,onHover}) {
   let state,options,selected,operation,items=new Set(),edges=[],locations=new Map(),decks=[],frame=0,w=1,h=1;
   let born=new Map(), knownKeys=null;
   let hitAreas=[], focusKeys=new Set(), highlightStart=0, hovered=null, drag=null, animation=true, inView=true;
-  let yaw=-.35,pitch=.72,zoom=1,dx=0,dy=0;
+  const home={yaw:-.35,pitch:.72,zoom:1,dx:0,dy:0};
+  const views={iso:home,top:{yaw:0,pitch:1.5,zoom:1,dx:0,dy:0},front:{yaw:0,pitch:.32,zoom:1,dx:0,dy:0}};
+  let yaw=home.yaw,pitch=home.pitch,zoom=home.zoom,dx=0,dy=0;
+  const goal={...home};
+  let velocity={yaw:0,pitch:0}, screenPos=new Map();
+  const pointers=new Map();
+  let pinch=null;
+  const PITCH=[.22,1.5], ZOOM=[.45,5];
+  function stepCamera() {
+    if (!drag&&!motion.matches&&(Math.abs(velocity.yaw)>.0002||Math.abs(velocity.pitch)>.0002)) {
+      goal.yaw+=velocity.yaw;goal.pitch=clamp(goal.pitch+velocity.pitch,...PITCH);
+      velocity.yaw*=.9;velocity.pitch*=.9;
+    }
+    const k=motion.matches?1:.22;
+    const gap=Math.abs(goal.yaw-yaw)+Math.abs(goal.pitch-pitch)+Math.abs(goal.zoom-zoom)+(Math.abs(goal.dx-dx)+Math.abs(goal.dy-dy))/300;
+    if (gap<.0006) {yaw=goal.yaw;pitch=goal.pitch;zoom=goal.zoom;dx=goal.dx;dy=goal.dy;return Math.abs(velocity.yaw)+Math.abs(velocity.pitch)>.0002;}
+    yaw+=(goal.yaw-yaw)*k;pitch+=(goal.pitch-pitch)*k;zoom+=(goal.zoom-zoom)*k;dx+=(goal.dx-dx)*k;dy+=(goal.dy-dy)*k;
+    return true;
+  }
+  function zoomAt(value,px=w/2,py=h/2) {
+    const next=clamp(value,...ZOOM), factor=next/goal.zoom;
+    goal.dx=(px-w/2)-((px-w/2)-goal.dx)*factor;
+    goal.dy=(py-h/2)-((py-h/2)-goal.dy)*factor;
+    goal.zoom=next;schedule();
+  }
+  function focusOn(key) {
+    const spot=screenPos.get(key);
+    if (!spot) return;
+    const factor=clamp(Math.max(goal.zoom,1)*1.7,...ZOOM)/goal.zoom;
+    goal.dx=(goal.dx-(spot[0]-w/2))*factor;goal.dy=(goal.dy-(spot[1]-h/2))*factor;goal.zoom*=factor;
+    velocity={yaw:0,pitch:0};schedule();
+  }
   let view;
   let gl=null;
   const glActive=()=>!!gl&&options?.view!=='2d';
@@ -199,16 +233,13 @@ export function mountScene(canvas,{onSelect,onHover}) {
   }
   function fit() {
     view={cosYaw:Math.cos(yaw),sinYaw:Math.sin(yaw),cosPitch:Math.cos(pitch),sinPitch:Math.sin(pitch)};
-    const limits=decks.flatMap(deck=>footprint(deck.x,0,deck.z,deck.halfWidth,deck.halfWidth,0,deck.length,.14).map(rawProject));
-    for (const {x,y,z,item} of locations.values()) {
-      const size=kinds[item.kind].size;
-      limits.push(rawProject([x-size[0],y+size[1],z-size[2]]),rawProject([x+size[0],y+size[1],z+size[2]]));
-    }
-    const xs=limits.map(point=>point[0]),ys=limits.map(point=>point[1]);
-    const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
-    const base=Math.min((w-(w<440?22:51))/Math.max(1,maxX-minX),(h-52)/Math.max(1,maxY-minY));
+    const xs=decks.flatMap(deck=>[deck.x-deck.halfWidth,deck.x+deck.halfWidth]), zs=decks.flatMap(deck=>[deck.z,deck.z+deck.length]);
+    const mx=(Math.min(...xs)+Math.max(...xs))/2, mz=(Math.min(...zs)+Math.max(...zs))/2;
+    const radius=Math.max(1,...decks.flatMap(deck=>[[deck.x-deck.halfWidth,deck.z],[deck.x+deck.halfWidth,deck.z],[deck.x-deck.halfWidth,deck.z+deck.length],[deck.x+deck.halfWidth,deck.z+deck.length]]).map(([x,z])=>Math.hypot(x-mx,z-mz)));
+    const base=Math.min((w-(w<440?20:44))/(2*radius),(h-44)/(2*radius*view.sinPitch+1.3*view.cosPitch));
     const scale=Math.max(4,base)*zoom;
-    Object.assign(view,{scale,cx:w/2-(minX+maxX)/2*scale+dx,cy:h/2-(minY+maxY)/2*scale+dy});
+    const [px,py]=rawProject([mx,.3,mz]);
+    Object.assign(view,{scale,cx:w/2-px*scale+dx,cy:h/2-py*scale+dy});
   }
   function polygon(points,fill,stroke,width=1) {
     ctx.beginPath();
@@ -493,6 +524,7 @@ export function mountScene(canvas,{onSelect,onHover}) {
     const ox=(w-layout.W*k)/2+dx, oy=(h-layout.H*k)/2+dy;
     const {w:cw,h:ch}=CARD;
     const centers=new Map(), cardList=[];
+    screenPos=new Map();
     hitAreas=[];
     ctx.save();
     ctx.translate(ox,oy);ctx.scale(k,k);
@@ -517,6 +549,7 @@ export function mountScene(canvas,{onSelect,onHover}) {
         const key=resourceKey(card.record.item), x=band.x+card.x, y=band.y+card.y;
         centers.set(key,{x:x+cw/2,y:y+ch/2});
         cardList.push({record:card.record,key,x,y});
+        screenPos.set(key,[ox+(x+cw/2)*k,oy+(y+ch/2)*k]);
       }
     }
     if (options.links) edges.forEach((edge,index)=>{
@@ -583,6 +616,7 @@ export function mountScene(canvas,{onSelect,onHover}) {
     const moving=animation&&!motion.matches;
     gl.frame({now,w,h,ratio:Math.min(2,window.devicePixelRatio||1),light,yaw,pitch,zoom,dx,dy,info,animation:moving,links:options.links,focusKind:operation?.effect.type,born});
     hitAreas=[];
+    screenPos=new Map(shown.map(record=>{const key=resourceKey(record.item), spot=gl.anchor(key);return [key,spot?.bottom];}).filter(entry=>entry[1]));
     const occupied=[];
     const entries=shown.map(record=>{const key=resourceKey(record.item);return {record,key,...info.get(key)};});
     const rank=entry=>(entry.chosen||entry.pointed?6:0)+(entry.focused?4:0)+(entry.fault?3:0)+(entry.record.item.kind==='Pod'?2:0);
@@ -615,6 +649,7 @@ export function mountScene(canvas,{onSelect,onHover}) {
   }
   function draw(now) {
     frame=0;
+    if (stepCamera()) schedule();
     ctx.clearRect(0,0,w,h);
     if (!state||!decks.length) return;
     const light=document.documentElement.dataset.theme==='light', theme=colors[light?'light':'dark'];
@@ -632,6 +667,7 @@ export function mountScene(canvas,{onSelect,onHover}) {
     if(options.links) edges.forEach((edge,index)=>drawEdge(edge,index,now,theme));
     const ordered=[...locations.values()].filter(place=>items.has(resourceKey(place.item))).sort((a,b)=>project([a.x,a.y,a.z])[2]-project([b.x,b.y,b.z])[2]);
     const shapes=ordered.map(record=>drawObject(record,theme,light,now));
+    screenPos=new Map(shapes.map(shape=>[shape.key,[shape.x,shape.y]]));
     hitAreas=shapes.map(shape=>({key:shape.key,areas:[shape.cap,...shape.faces.map(face=>face.points)]}));
     const occupied=[];
     for(const deck of orderedDecks) {
@@ -677,44 +713,74 @@ export function mountScene(canvas,{onSelect,onHover}) {
     onHover?.(key);
     schedule();
   }
+  const local=event=>{const rect=canvas.getBoundingClientRect();return [event.clientX-rect.left,event.clientY-rect.top];};
+  const spread=()=>{const [a,b]=[...pointers.values()];return {d:Math.hypot(a.x-b.x,a.y-b.y),x:(a.x+b.x)/2,y:(a.y+b.y)/2};};
   canvas.addEventListener('pointerdown',event=>{
-    if (event.button===1) return;
     canvas.setPointerCapture(event.pointerId);
-    drag={x:event.clientX,y:event.clientY,started:false,pan:event.shiftKey||event.button===2||options.pan||options.view==='2d'};
+    pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
+    velocity={yaw:0,pitch:0};
+    if (pointers.size===2) {const now=spread();pinch={...now,zoom:goal.zoom};drag=null;return;}
+    drag={x:event.clientX,y:event.clientY,started:false,pan:event.shiftKey||event.ctrlKey||event.button===1||event.button===2||options.pan||options.view==='2d'};
+    if (event.button===1) event.preventDefault();
   },{signal});
   canvas.addEventListener('pointermove',event=>{
+    if (pointers.has(event.pointerId)) pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
+    if (pinch&&pointers.size===2) {
+      const now=spread(), rect=canvas.getBoundingClientRect();
+      goal.dx+=now.x-pinch.x;goal.dy+=now.y-pinch.y;
+      zoomAt(pinch.zoom*now.d/Math.max(20,pinch.d),now.x-rect.left,now.y-rect.top);
+      pinch={...pinch,x:now.x,y:now.y};
+      return;
+    }
     if (!drag) {hover(hit(event));return;}
     const x=event.clientX-drag.x,y=event.clientY-drag.y;
-    if (!drag.started&&Math.abs(x)+Math.abs(y)<3) return;
+    if (!drag.started&&Math.abs(x)+Math.abs(y)<4) return;
     drag.started=true;
     hover(null);
-    if(drag.pan){dx+=x;dy+=y;}
-    else{yaw+=x*.008;pitch=clamp(pitch+y*.008,.30,1.44);}
-    drag.x=event.clientX;drag.y=event.clientY;schedule();
+    canvas.style.cursor=drag.pan?'move':'grabbing';
+    if (drag.pan) {goal.dx+=x;goal.dy+=y;dx+=x;dy+=y;}
+    else {
+      const turn=x*.0068, tilt=y*.0052;
+      goal.yaw+=turn;goal.pitch=clamp(goal.pitch+tilt,...PITCH);
+      velocity={yaw:turn*.55,pitch:tilt*.55};
+    }
+    drag.x=event.clientX;drag.y=event.clientY;drag.last=performance.now();schedule();
   },{signal});
-  canvas.addEventListener('pointerup',event=>{
-    if(drag&&!drag.started&&event.button!==2){const key=hit(event);if(key)onSelect(key);}
+  function release(event) {
+    pointers.delete(event.pointerId);
+    if (pointers.size<2) pinch=null;
+    if (drag&&!drag.started&&event.button!==2&&event.type==='pointerup') {const key=hit(event);if(key)onSelect(key);}
+    if (drag&&drag.started&&performance.now()-(drag.last??0)>80) velocity={yaw:0,pitch:0};
     drag=null;
-  },{signal});
-  canvas.addEventListener('pointercancel',()=>{drag=null;hover(null);},{signal});
-  canvas.addEventListener('pointerleave',()=>hover(null),{signal});
+    canvas.style.cursor=options.pan?'move':hovered?'pointer':'grab';
+    schedule();
+  }
+  canvas.addEventListener('pointerup',release,{signal});
+  canvas.addEventListener('pointercancel',event=>{release(event);hover(null);},{signal});
+  canvas.addEventListener('pointerleave',()=>{if(!drag)hover(null);},{signal});
   canvas.addEventListener('contextmenu',event=>event.preventDefault(),{signal});
+  canvas.addEventListener('dblclick',event=>{
+    const key=hit(event);
+    if (key) {onSelect(key);focusOn(key);} else reset();
+  },{signal});
   canvas.addEventListener('wheel',event=>{
-    if(!event.ctrlKey&&document.activeElement!==canvas)return;
-    event.preventDefault();zoom=clamp(zoom*Math.exp(-event.deltaY*.002),.55,3.5);schedule();
+    event.preventDefault();
+    const [x,y]=local(event), delta=event.deltaMode===1?event.deltaY*16:event.deltaY;
+    zoomAt(goal.zoom*Math.exp(-delta*(event.ctrlKey?.006:.0016)),x,y);
   },{passive:false,signal});
   canvas.addEventListener('keydown',event=>{
     const key=event.key;
-    if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','+','=','-','0'].includes(key)) return;
+    if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','+','=','-','0','f','F'].includes(key)) return;
     event.preventDefault();
     if(key==='0'){reset();return;}
-    if(['+','=','-'].includes(key)){zoomBy(key==='-'?1/1.15:1.15);return;}
+    if(key==='f'||key==='F'){if(selected) focusOn(selected);return;}
+    if(['+','=','-'].includes(key)){zoomBy(key==='-'?1/1.2:1.2);return;}
     if(options.pan||event.shiftKey||options.view==='2d') {
-      dx+=key==='ArrowLeft'?-16:key==='ArrowRight'?16:0;
-      dy+=key==='ArrowUp'?-16:key==='ArrowDown'?16:0;
+      goal.dx+=key==='ArrowLeft'?-30:key==='ArrowRight'?30:0;
+      goal.dy+=key==='ArrowUp'?-30:key==='ArrowDown'?30:0;
     } else {
-      yaw+=key==='ArrowLeft'?-.11:key==='ArrowRight'?.11:0;
-      pitch=clamp(pitch+(key==='ArrowUp'?-.07:key==='ArrowDown'?.07:0),.30,1.44);
+      goal.yaw+=key==='ArrowLeft'?-.18:key==='ArrowRight'?.18:0;
+      goal.pitch=clamp(goal.pitch+(key==='ArrowUp'?-.12:key==='ArrowDown'?.12:0),...PITCH);
     }
     schedule();
   },{signal});
@@ -722,8 +788,9 @@ export function mountScene(canvas,{onSelect,onHover}) {
   document.addEventListener('visibilitychange',schedule,{signal});
   motion.addEventListener('change',schedule,{signal});
   document.fonts.ready.then(()=>{if(!signal.aborted)schedule();});
-  function reset(){yaw=-.35;pitch=.72;zoom=1;dx=0;dy=0;schedule();}
-  function zoomBy(value){zoom=clamp(zoom*value,.55,3.5);schedule();}
+  function setView(name){Object.assign(goal,views[name]??home);velocity={yaw:0,pitch:0};schedule();}
+  function reset(){setView('iso');}
+  function zoomBy(value){zoomAt(goal.zoom*value);}
 
   return {
     update(next,config,select,op) {
@@ -732,7 +799,8 @@ export function mountScene(canvas,{onSelect,onHover}) {
       if (knownKeys) for (const key of nextItems) if (!knownKeys.has(key)) born.set(key,performance.now());
       knownKeys=nextItems;
       items=nextItems;
-      const context=visibleResources(state,{expert:options.expert,reveal:items,show:options.show});
+      const context=list(state).filter(item=>items.has(resourceKey(item))||item.kind==='Node')
+        .sort((a,b)=>order.indexOf(a.kind)-order.indexOf(b.kind)||a.metadata.name.localeCompare(b.metadata.name));
       const {places,decks:shownDecks}=layout(context);
       locations=places;
       decks=shownDecks;
@@ -746,7 +814,7 @@ export function mountScene(canvas,{onSelect,onHover}) {
       canvas.style.cursor=options.pan?'move':hovered?'pointer':'grab';
       schedule();
     },
-    reset,zoomBy,
+    reset,zoomBy,setView,
     setAnimation(value){animation=value;schedule();},
     destroy(){gl?.destroy();controls.abort();resize.disconnect();observer.disconnect();cancelAnimationFrame(frame);}
   };
