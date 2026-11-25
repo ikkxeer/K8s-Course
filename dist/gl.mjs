@@ -349,20 +349,13 @@ export function createGL(overlay,{sizeOf,colorOf}) {
         composer.setPixelRatio(ratio);composer.setSize(w,h);
         camera.aspect=w/h;
       }
-      // Encaje de cámara: proyecta las esquinas y ajusta la distancia.
+      // Encaje independiente del giro: la cámara orbita sin acercarse ni alejarse.
       bounds.getCenter(center);
       dir.set(Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch),Math.cos(yaw)*Math.cos(pitch));
-      let distance=bounds.getSize(corner).length()*1.4;
       camera.updateProjectionMatrix();
-      for (let pass=0;pass<4;pass++) {
-        camera.position.copy(center).addScaledVector(dir,distance);camera.lookAt(center);camera.updateMatrixWorld();
-        let mx=0,my=0;
-        for (let i=0;i<8;i++) {
-          corner.set(i&1?bounds.max.x:bounds.min.x,i&2?bounds.max.y:bounds.min.y,i&4?bounds.max.z:bounds.min.z).project(camera);
-          mx=Math.max(mx,Math.abs(corner.x));my=Math.max(my,Math.abs(corner.y));
-        }
-        distance*=Math.max(mx/(1-36/w),my/(1-44/h));
-      }
+      const half=THREE.MathUtils.degToRad(camera.fov/2), across=Math.atan(Math.tan(half)*camera.aspect);
+      const sphere=bounds.getSize(corner).multiply(new THREE.Vector3(1,.35,1)).length()/2;
+      let distance=sphere/Math.sin(Math.min(half,across))*.92;
       distance/=zoom;
       const unit=2*distance*Math.tan(THREE.MathUtils.degToRad(camera.fov/2))/h;
       camera.position.copy(center).addScaledVector(dir,distance);camera.lookAt(center);camera.updateMatrixWorld();
