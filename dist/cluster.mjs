@@ -41,7 +41,7 @@ export const resourceKey = resource => idFor(resource.kind,nameOf(resource),nsOf
 export const list = (state,kind) => Object.values(state.resources).filter(resource=>!kind || resource.kind===kind);
 export const statusOf = resource => resource.status?.phase??'Activo';
 export const ready = resource => resource?.status?.phase==='Running';
-export const errorStatus = phase => ['CrashLoopBackOff','OOMKilled','ImagePullBackOff','NotReady','Pending','Sin endpoints','Sin ruta','Bloqueado'].includes(phase);
+export const errorStatus = phase => ['CrashLoopBackOff','OOMKilled','ImagePullBackOff','NotReady','Pending','Degradado','Sin endpoints','Sin ruta','Bloqueado'].includes(phase);
 const assign = (state,resource) => {state.resources[resourceKey(resource)]=resource;return resource;};
 const pick = (state,type,name,ns) => resourceBy(state,type,name,ns)??fail(`No existe ${type}/${name}${scoped.has(type)?'':' en '+ns}.`);
 const getPodSpec = resource => resource.kind==='Deployment'?resource.spec.template.spec:resource.spec;
@@ -193,9 +193,9 @@ export function eventsFor(state,resource) {
   const podEvents = list(state,'Pod').filter(pod=>!ready(pod) && (!key || resourceKey(pod)===key || pod.sim?.deployment===key || pod.sim?.owner===key)).map(pod=>{
     const phase = statusOf(pod);
     const messages = {ImagePullBackOff:'El registro simulado no encontró la etiqueta de la imagen.',OOMKilled:'El contenedor superó el límite de memoria.',Pending:'No hay un nodo o volumen compatible.',CrashLoopBackOff:'El proceso del contenedor terminó con un error.'};
-    return {type:'Warning',reason:phase,message:nameOf(pod)+': '+(messages[phase]??phase)};
+    return {type:'Warning',reason:phase,message:nameOf(pod)+': '+(messages[phase]??phase),resource:resourceKey(pod)};
   });
-  const serviceEvents = list(state,'Service').filter(svc=>statusOf(svc)==='Sin endpoints' && (!key || resourceKey(svc)===key)).map(svc=>({type:'Warning',reason:'NoReadyEndpoints',message:nameOf(svc)+': no hay Pods listos que coincidan con el selector.'}));
+  const serviceEvents = list(state,'Service').filter(svc=>statusOf(svc)==='Sin endpoints' && (!key || resourceKey(svc)===key)).map(svc=>({type:'Warning',reason:'NoReadyEndpoints',message:nameOf(svc)+': no hay Pods listos que coincidan con el selector.',resource:resourceKey(svc)}));
   return [...state.events.filter(event=>!key || event.resource===key),...podEvents,...serviceEvents];
 }
 
@@ -354,6 +354,19 @@ function update(state, item, ns) {
 
 function copyState(state) {return clone(state);}
 function commit(target, source) {Object.assign(target,source);}
+
+function mutationEffect(before, after) {
+  const targets=new Set(after.events.filter(event=>event.sequence>before.sequence && event.resource).map(event=>event.resource));
+  const entries=Object.entries(after.resources);
+  return {
+    type:'write',
+    created:entries.filter(([key])=>!own(before.resources,key)).map(([key])=>key),
+    updated:entries.filter(([key,resource])=>own(before.resources,key) &&
+      (targets.has(key) || JSON.stringify(before.resources[key])!==JSON.stringify(resource))).map(([key])=>key),
+    removed:Object.keys(before.resources).filter(key=>!own(after.resources,key))
+  };
+}
+
 function parseDocuments(source) {
   if (typeof source!=='string' || !source.trim()) fail('El manifiesto está vacío.');
   if (source.length>24000) fail('El manifiesto no puede superar 24 000 caracteres.');
@@ -367,8 +380,11 @@ export function applyYaml(state,source,{validate=false,ns=state.activeNs}={}) {
     const draft = copyState(state);
     const resources = parseDocuments(source).map(doc=>update(draft,doc,ns));
     reconcile(draft);
-    if (!validate) commit(state,draft);
-    return {ok:true,text:validate?`${resources.length} manifiesto(s) válido(s) para este simulador.`:resources.map(resource=>resource.kind.toLowerCase()+'/'+nameOf(resource)+' aplicado').join('\n')};
+    const text=validate?`${resources.length} manifiesto(s) válido(s) para este simulador.`:resources.map(resource=>resource.kind.toLowerCase()+'/'+nameOf(resource)+' aplicado').join('\n');
+    if (validate) return {ok:true,text};
+    const effect=mutationEffect(state,draft);
+    commit(state,draft);
+    return {ok:true,text,effect};
   } catch (error) {return {ok:false,text:'Error: '+error.message};}
 }
 
@@ -485,12 +501,13 @@ const help = `Comandos disponibles en esta simulación:
   pwd     ls     cat editor.yaml     clear
 Tipos didácticos: Cluster, Component y Container.`;
 
-function getResources(state,args,flag,ns,describe=false) {
+function getResources(state,args,flag,ns,focus,describe=false) {
   const [kind,name] = resourceArg(args[0],args[1]);
   const output = flag('-o','--output');
   if (output && !['yaml','json','wide','name'].includes(output)) fail('Formato de salida disponible: yaml, json, wide o name.');
   if (kind==='Event') {
     const events = eventsFor(state).filter(event=>flag('-A','--all-namespaces') || !event.resource || event.resource.split('/')[1]==='' || event.resource.split('/')[1]===ns);
+    focus.push(...events.flatMap(event=>state.resources[event.resource]?[event.resource]:[]));
     return table(['TIPO','MOTIVO','MENSAJE'],events.map(event=>[event.type,event.reason,event.message]));
   }
   let items = list(state,kind).filter(resource=>scoped.has(kind) || flag('-A','--all-namespaces') || nsOf(resource)===ns);
@@ -500,6 +517,8 @@ function getResources(state,args,flag,ns,describe=false) {
   if (flag('-l','--selector')) items=items.filter(resource=>matches(labels(flag('-l','--selector')),resource.metadata.labels));
   if (!name) state.inspected.add(kind);
   for (const item of items) markInspected(state,item);
+  focus.push(...items.map(resourceKey));
+  if (kind==='Endpoints') focus.push(...items.flatMap(item=>item.status.endpoints));
   if (kind==='Endpoints') return table(['NOMBRE','ENDPOINTS'],items.map(item=>[nameOf(item),item.status.endpoints.map(key=>key.split('/').at(-1)).join(', ')||'<ninguno>']));
   if (describe) return items.map(item=>{
     const events = eventsFor(state,item);
@@ -523,8 +542,8 @@ function getResources(state,args,flag,ns,describe=false) {
     }));
 }
 
-function readOnly(state,verb,args,flag,ns) {
-  if (verb==='get' || verb==='describe') return getResources(state,args,flag,ns,verb==='describe');
+function readOnly(state,verb,args,flag,ns,focus) {
+  if (verb==='get' || verb==='describe') return getResources(state,args,flag,ns,focus,verb==='describe');
   if (verb==='logs') {
     const [kind,name]=args[0]?.includes('/')?resourceArg(args[0]):['Pod',args[0]];
     if (kind!=='Pod' && kind!=='Deployment') fail('Usa logs con un Pod o un Deployment.');
@@ -532,18 +551,22 @@ function readOnly(state,verb,args,flag,ns) {
     const target = kind==='Pod'?item:list(state,'Pod').find(pod=>pod.sim?.deployment===resourceKey(item));
     if (!target) fail('El Deployment no tiene Pods.');
     markInspected(state,target);
+    focus.push(resourceKey(target));
     return logsFor(target,flag('-c','--container'));
   }
   if (verb==='top') {
     const [kind,name]=resourceArg(args[0],args[1]);
     if (kind!=='Pod') fail('El laboratorio simula métricas de Pods.');
     if (name) pick(state,'Pod',name,ns);
-    return table(['POD','CONTENEDOR','CPU','MEMORIA','LÍMITE'],list(state,'Pod').filter(pod=>nsOf(pod)===ns && (!name || nameOf(pod)===name)).flatMap(pod=>metricsFor(state,pod).map(metric=>[nameOf(pod),metric.name,metric.cpu,metric.memory,metric.limit])));
+    const pods=list(state,'Pod').filter(pod=>(flag('-A','--all-namespaces') || nsOf(pod)===ns) && (!name || nameOf(pod)===name));
+    focus.push(...pods.map(resourceKey));
+    return table(['POD','CONTENEDOR','CPU','MEMORIA','LÍMITE'],pods.flatMap(pod=>metricsFor(state,pod).map(metric=>[nameOf(pod),metric.name,metric.cpu,metric.memory,metric.limit])));
   }
   if (verb==='rollout' && ['status','history'].includes(args[0])) {
     const [kind,name]=resourceArg(args[1],args[2]);
     if (kind!=='Deployment') fail('rollout requiere un Deployment.');
     const item=pick(state,kind,name,ns);
+    focus.push(resourceKey(item));
     if (args[0]==='status') return name+': '+item.status.availableReplicas+'/'+item.spec.replicas+' réplicas disponibles.';
     return table(['REVISIÓN','IMAGEN'],state.revisions[resourceKey(item)].map(revision=>[revision.id,revision.template.spec.containers.map(container=>container.image).join(', ')]));
   }
@@ -674,13 +697,17 @@ export function execute(state,input,editor='') {
     if (!verb || verb==='help' || flag('--help')) return {ok:true,text:help};
     const ns=flag('-n','--namespace')??state.activeNs;
     pick(state,'Namespace',ns,'');
-    const text=readOnly(state,verb,args,flag,ns);
-    if (text!==null) return {ok:true,text};
+    const focus=[];
+    const text=readOnly(state,verb,args,flag,ns,focus);
+    if (text!==null) return {ok:true,text,effect:{type:'read',keys:[...new Set(focus)]}};
     const draft=copyState(state);
     const result=edit(draft,verb,args,flag,ns,editor);
     reconcile(draft);
+    const effect=verb==='config'
+      ?{type:'context',keys:[idFor('Namespace',draft.activeNs,'')]}
+      :mutationEffect(state,draft);
     commit(state,draft);
-    return {ok:true,text:result};
+    return {ok:true,text:result,effect};
   } catch (error) {return {ok:false,text:'Error: '+error.message};}
 }
 

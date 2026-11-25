@@ -44,7 +44,7 @@ function coach(state,lesson,done,attempts) {
 function terminalTemplate() {
   return '<div id="terminal-panel"><div class="terminal-body" role="log" aria-live="polite" aria-label="Salida de la terminal" tabindex="0"></div>'+
     '<form id="command-form" class="prompt"><span class="prompt-name" aria-hidden="true"></span><input id="command" aria-label="Comando de terminal" autocapitalize="off" autocomplete="off" spellcheck="false" maxlength="6000" placeholder="kubectl get nodes"><button class="icon-btn" type="submit" aria-label="Ejecutar comando">'+icon('play',15)+'</button></form>'+
-    '<button class="terminal-help" data-lab="help" type="button">'+icon('info',15)+' Comandos disponibles</button></div>';
+    '<div class="terminal-actions"><button class="terminal-help" data-lab="help" type="button">'+icon('info',15)+' Comandos disponibles</button><button class="text-link" id="terminal-focus" data-lab="view-focus" type="button" hidden>Ver en 3D</button></div></div>';
 }
 function yamlTemplate() {
   return '<div id="yaml-panel" hidden><div class="yaml-toolbar"><span>editor.yaml</span>'+button('example','Ejemplo','code')+button('yaml-check','Validar','check')+button('yaml-apply','Aplicar','play','primary small')+'</div>'+
@@ -92,36 +92,84 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
   const abort=new AbortController(), signal=abort.signal;
   const firstYaml=(!cert&&!challenge&&lesson.template)||defaultYaml;
   let state=createCluster(lesson.seed), editor=firstYaml, selected=null, inspect='status', current=builder?'builder':'terminal';
-  let output=[['notice',hello]], history=[], historyIndex=0, checks=[], feedback='', success=false, helper=false, hintCount=0, credited=false;
-  const options={expert:builder||lesson.id==='arquitectura',namespace:'*',kind:'*',links:true,pan:false,hideErrors:lesson.category==='Incidencia'&&lesson.difficulty==='Avanzado',focus:lesson.focus};
+  let history=[], historyIndex=0, checks=[], feedback='', success=false, helper=false, hintCount=0, credited=false;
+  let operation=null, revealAffected=false;
+  const options={expert:builder||lesson.id==='arquitectura',namespace:'*',kind:'*',links:true,pan:false,hideErrors:lesson.category==='Incidencia'&&lesson.difficulty==='Avanzado'};
   const route=modules.flatMap(module=>module.lessons);
   const next=route[route.indexOf(lesson.id)+1];
   const back=['sandbox','constructor'].includes(mode)?'resumen':mode;
   const incident=lesson.category==='Incidencia';
 
-  root.innerHTML='<div class="lab-header"><div><a class="text-link" href="#'+back+'">'+modeNames[mode]+'</a><h1>'+e(lesson.title)+'</h1><div class="lab-meta"><span class="simulation-pill"><i></i> Simulación</span>'+
+  const guide='<aside class="lab-guide" aria-label="Guía de la práctica">'+
+    (cert||challenge?'':'<section class="panel lab-guide-card">'+title('Concepto',incident?'pulse':'book')+'<p>'+e(lesson.concept)+'</p></section>')+
+    (lesson.objectives.length?'<section id="lab-goals" tabindex="-1" class="panel lab-guide-card goals" aria-label="Objetivos de la práctica">'+title('Objetivos','target')+'<ul id="goal-list"></ul>'+button('validate','Validar objetivos','check','primary')+'<div id="goal-feedback" aria-live="polite"></div></section>':'')+
+    (cert?'<p class="lab-note">Simulacro con pistas desactivadas.</p>':'<section class="panel lab-guide-card"><button class="helper-toggle" data-lab="coach" type="button" aria-expanded="false">'+icon('spark',19)+' <span>Asistente de práctica</span>'+icon('down',15)+'</button><div id="helper-content" hidden></div></section>')+'</aside>';
+
+  root.innerHTML='<div class="lab-header"><div><a class="text-link" href="#'+back+'">'+modeNames[mode]+'</a><h1>'+e(lesson.title)+'</h1><p class="lab-intro">'+e(lesson.intro)+'</p><div class="lab-meta"><span class="simulation-pill"><i></i> Simulación</span>'+
     (lesson.minutes?'<span class="tag">'+e(lesson.difficulty)+'</span><span>'+icon('clock',15)+' '+lesson.minutes+' min</span><span class="xp">+'+lesson.xp+' XP</span>':'')+
-    (survival?'<span class="tag amber">Etapa '+(stage+1)+' / '+phases.length+'</span>':'')+'</div></div>'+button('reset','Reiniciar','rotate')+'</div>'+
-    '<div class="lab-workspace"><aside class="lab-guide" aria-label="Guía de la práctica">'+
-    '<section class="panel lab-guide-card">'+title(incident?'Informe del incidente':'Enunciado',incident?'pulse':'book')+'<p>'+e(lesson.intro)+'</p>'+
-    (cert||challenge?'':'<details class="concept" '+(lesson.id==='primer-pod'?'open':'')+'><summary>Concepto</summary><p>'+e(lesson.concept)+'</p></details>')+'</section>'+
-    (lesson.objectives.length?'<section class="panel lab-guide-card goals">'+title('Objetivos','target')+'<ul id="goal-list"></ul>'+button('validate','Validar objetivos','check','primary')+'<div id="goal-feedback" aria-live="polite"></div></section>':'')+
-    (cert?'<p class="lab-note">Simulacro con pistas desactivadas.</p>':'<section class="panel lab-guide-card"><button class="helper-toggle" data-lab="coach" type="button" aria-expanded="false">'+icon('spark',19)+' <span>Asistente de práctica</span>'+icon('down',15)+'</button><div id="helper-content" hidden></div></section>')+'</aside>'+
-    '<div class="lab-interaction"><section class="panel topology" aria-label="Topología 3D">'+
+    (survival?'<span class="tag amber">Etapa '+(stage+1)+' / '+phases.length+'</span>':'')+
+    (lesson.objectives.length?'<button type="button" class="lab-goal-link" data-lab="view-objectives" aria-controls="lab-goals">'+icon('target',15)+' <span>Objetivos</span> <strong id="goal-total"></strong></button>':'')+
+    '</div></div>'+button('reset','Reiniciar','rotate')+'</div>'+
+    '<div class="lab-workspace"><div class="lab-interaction"><section class="panel topology" aria-label="Topología 3D">'+
     '<div class="topology-head">'+title('Topología 3D','cluster')+'<div class="segmented" aria-label="Detalle de la topología"><button data-lab="basic" type="button">Básico</button><button data-lab="expert" type="button">Experto</button></div></div>'+
+    '<div class="scene-filters">'+icon('filter',16)+'<select id="ns-filter" aria-label="Filtrar por namespace"></select><select id="kind-filter" aria-label="Filtrar por tipo"><option value="*">Todos los tipos</option>'+kinds.map(option).join('')+'</select></div>'+
     '<div class="scene-stage"><canvas tabindex="0" aria-label="Escena 3D del clúster. Flechas para rotar, más y menos para acercar y alejar, 0 para restablecer. Explora los recursos en la lista."></canvas>'+
-    '<div class="scene-filters"><select id="ns-filter" aria-label="Filtrar por namespace"></select><select id="kind-filter" aria-label="Filtrar por tipo"><option value="*">Todos los tipos</option>'+kinds.map(option).join('')+'</select></div>'+
     '<div class="scene-tools">'+toolButtons.map(([action,label,symbol])=>'<button type="button" class="icon-btn" data-lab="'+action+'" title="'+label+'" aria-label="'+label+'">'+icon(symbol,17)+'</button>').join('')+'</div>'+
-    '<div class="scene-caption"><span id="scene-count"></span><span>Arrastra para rotar</span></div></div>'+
-    '<div class="scene-legend"><label><input type="checkbox" id="links-switch" checked> Relaciones</label><label><input type="checkbox" id="traffic-switch" checked> Animar tráfico</label><span><i></i> Ruta de red</span></div></section>'+
+    '<div id="scene-hover" class="scene-hover" hidden></div></div>'+
+    '<div class="scene-status"><div id="scene-operation" role="status" aria-live="polite"></div><button type="button" id="reveal-affected" class="text-link" data-lab="show-affected" hidden>Mostrar afectados</button><button type="button" id="clear-affected" class="icon-btn" data-lab="clear-affected" aria-label="Quitar resaltado" title="Quitar resaltado" hidden>'+icon('close',15)+'</button></div>'+
+    '<div class="scene-legend"><label><input type="checkbox" id="links-switch" checked> Relaciones</label><label><input type="checkbox" id="traffic-switch" checked> Animar tráfico</label><span class="network-key"><i></i> Tráfico</span><span class="fault-key"><i></i> Incidencia</span><span id="scene-count"></span></div></section>'+
     '<div class="lab-tools"><section class="panel console" aria-label="Herramientas del laboratorio"><div class="tabs">'+tab('terminal','Terminal',current==='terminal','terminal')+tab('yaml','YAML',false,'code')+(builder?tab('builder','Constructor',true,'layers'):'')+'</div>'+
     terminalTemplate()+yamlTemplate()+(builder?builderTemplate():'')+'</section>'+
-    '<section class="panel explorer" aria-label="Explorador de recursos"><div class="explorer-head">'+title('Explorador','layers')+'<button id="resource-back" class="text-link" type="button" data-lab="resources" hidden>Ver recursos</button></div><div id="explorer-content"></div></section></div></div></div>'+
+    '<section class="panel explorer" aria-label="Explorador de recursos"><div class="explorer-head">'+title('Explorador','layers')+'<button id="resource-back" class="text-link" type="button" data-lab="resources" hidden>Ver recursos</button></div><div id="explorer-content"></div></section></div></div>'+guide+'</div>'+
     '<dialog id="reset-dialog" class="dialog" aria-labelledby="reset-title"><h2 id="reset-title">Reiniciar laboratorio</h2><p>Se restaurarán los recursos iniciales y los cambios de esta sesión se perderán.</p><div class="reset-actions">'+button('cancel-reset','Cancelar')+button('confirm-reset','Reiniciar','rotate','primary small')+'</div></dialog>';
 
   const q=selector=>root.querySelector(selector);
   const command=q('#command'), area=q('#yaml-editor'), log=q('.terminal-body'), code=q('.yaml-highlight');
-  const scene=mountScene(q('canvas'),{onSelect:selectResource});
+  const scene=mountScene(q('canvas'),{onSelect:selectResource,onHover:showHover});
+
+  function visiblePhase(item) {
+    const phase=statusOf(item), key=resourceKey(item);
+    return options.hideErrors&&errorStatus(phase)&&key!==selected&&!operation?.keys.has(key)&&!state.inspected.has(item.kind+'/'+item.metadata.name)
+      ?'Sin inspeccionar':phase;
+  }
+  function showHover(key) {
+    const node=q('#scene-hover'), item=state.resources[key];
+    node.hidden=!item;
+    if (item) node.innerHTML='<strong>'+e(item.kind)+' · '+e(item.metadata.name)+'</strong><span>'+e(visiblePhase(item))+'</span>';
+  }
+  function setOperation(effect,label) {
+    revealAffected=false;
+    if (!effect) {operation=null;return;}
+    const keys=new Set(effect.type==='write'?[...effect.created,...effect.updated]:effect.keys);
+    const verb=label.startsWith('kubectl ')?label.trim().split(/\s+/).slice(0,4).join(' '):label;
+    operation={effect,keys,label:verb};
+    if(keys.size&&selected&&!keys.has(selected)) selected=null;
+  }
+  function drawOperation(visible) {
+    const bar=q('#scene-operation'), wrapper=bar.parentElement, reveal=q('#reveal-affected'), clear=q('#clear-affected');
+    q('#terminal-focus').hidden=!operation?.keys.size;
+    clear.hidden=!operation;
+    wrapper.dataset.effect=operation?.effect.type??'';
+    if(!operation) {
+      bar.innerHTML=icon('info',16)+'<span>Arrastra para girar. Haz clic en un recurso para inspeccionarlo.</span>';
+      bar.removeAttribute('title');
+      reveal.hidden=true;
+      return;
+    }
+    const {keys,effect,label}=operation;
+    const shown=visible.filter(item=>keys.has(resourceKey(item))).length;
+    const hidden=keys.size-shown;
+    const counts=effect.type==='write'
+      ?[[effect.created.length,'creado','creados'],[effect.updated.length,'actualizado','actualizados'],[effect.removed.length,'eliminado','eliminados']]
+      :[[keys.size,effect.type==='context'?'namespace activo':'consultado',effect.type==='context'?'namespaces activos':'consultados']];
+    const detail=counts.filter(([count])=>count).map(([count,one,many])=>count+' '+(count===1?one:many)).join(' · ')||
+      (effect.type==='write'?'Sin cambios en los recursos':'Sin recursos coincidentes');
+    bar.innerHTML=icon(effect.type==='write'?'bolt':'target',17)+'<span><strong>'+e(detail)+'</strong><code>'+e(label)+'</code>'+
+      (hidden?'<small>'+hidden+(hidden===1?' oculto por la vista':' ocultos por la vista')+'</small>':'')+'</span>';
+    if(effect.removed?.length) bar.title='Eliminados: '+effect.removed.map(key=>key.split('/').at(-1)).join(', ');
+    else bar.removeAttribute('title');
+    reveal.hidden=!hidden;
+  }
 
   function drawEditor() {
     if(area.value!==editor) area.value=editor;
@@ -141,8 +189,16 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
     }
     if(current==='yaml') drawEditor();
   }
-  function drawLog() {
-    log.innerHTML=output.map(([type,line])=>'<pre class="'+type+'">'+e(line)+'</pre>').join('');
+  function drawLog(entries,replace=false) {
+    if(replace) log.replaceChildren();
+    const lines=entries.map(([type,text])=>{
+      const line=document.createElement('pre');
+      line.className=type;
+      line.textContent=text;
+      return line;
+    });
+    log.append(...lines);
+    while(log.childElementCount>70) log.firstElementChild.remove();
     log.scrollTop=log.scrollHeight;
     q('.prompt-name').textContent=state.activeNs+' $';
   }
@@ -162,16 +218,19 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
       node.innerHTML='<div class="resource-heading">'+glyph(item)+'<strong>'+e(item.metadata.name)+'</strong><small>'+e(item.kind)+'</small></div>'+
         '<div class="tabs inspect-tabs">'+inspectorTabs.map(([key,name])=>tab('inspect/'+key,name,inspect===key)).join('')+'</div><div class="resource-detail">'+inspectorBody(state,item,inspect)+'</div>';
     } else {
-      node.innerHTML=resources.length?'<div class="resource-list">'+resources.map(resource=>{
-        const status=statusOf(resource), error=errorStatus(status);
-        const hidden=options.hideErrors&&error&&!state.inspected.has(resource.kind+'/'+resource.metadata.name);
-        return '<button type="button" data-resource="'+e(resourceKey(resource))+'">'+glyph(resource)+'<span><strong>'+e(resource.metadata.name)+'</strong><small>'+e(resource.kind)+(resource.metadata.namespace?' · '+e(resource.metadata.namespace):'')+'</small></span><small class="'+(error&&!hidden?'warn':'')+'">'+e(hidden?'Sin inspeccionar':status)+'</small></button>';
+      const affected=item=>operation?.keys.has(resourceKey(item))??false;
+      const ordered=[...resources].sort((a,b)=>Number(affected(b))-Number(affected(a)));
+      node.innerHTML=ordered.length?'<div class="resource-list">'+ordered.map(resource=>{
+        const status=visiblePhase(resource);
+        const effect=affected(resource)?operation.effect.type:'';
+        return '<button type="button" data-resource="'+e(resourceKey(resource))+'"'+(effect?' data-effect="'+effect+'"':'')+'>'+glyph(resource)+'<span><strong>'+e(resource.metadata.name)+'</strong><small>'+e(resource.kind)+(resource.metadata.namespace?' · '+e(resource.metadata.namespace):'')+'</small></span><small class="'+(errorStatus(status)?'warn':'')+'">'+e(status)+'</small>'+(effect?'<span class="visually-hidden"> · Resaltado por la última operación</span>':'')+'</button>';
       }).join('')+'</div>':'<p class="lab-note">No hay recursos con estos filtros.</p>';
     }
   }
   function drawGoals() {
     checks=validateGoals(state,lesson);
     if(!checks.length) return;
+    q('#goal-total').textContent=checks.filter(Boolean).length+' / '+checks.length;
     q('#goal-list').innerHTML=lesson.objectives.map((goal,i)=>'<li class="'+(checks[i]?'met':'')+'">'+icon(checks[i]?'check':'circle',16)+'<span class="visually-hidden">'+(checks[i]?'Cumplido: ':'Pendiente: ')+'</span>'+e(goal.text)+'</li>').join('');
     let link='';
     if (success&&mode==='academia'&&next) link='<a class="btn secondary small" href="'+lessonUrl(next)+'">Siguiente práctica</a>';
@@ -203,9 +262,16 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
       node.value=namespaces.includes(previous)?previous:state.activeNs;
     }
     if(selected&&!state.resources[selected]) selected=null;
+    const scope=item=>(options.kind==='*'||options.kind===item.kind) &&
+      (options.namespace==='*' || (item.kind==='Namespace'?item.metadata.name===options.namespace:!item.metadata.namespace||item.metadata.namespace===options.namespace));
+    options.reveal=new Set([...operation?.keys??[]].filter(key=>{
+      const item=state.resources[key];
+      return item && (revealAffected || operation.effect.type!=='write'&&scope(item));
+    }));
     const visible=visibleResources(state,options);
     q('#scene-count').textContent=visible.length+' '+(visible.length===1?'recurso':'recursos');
-    scene.update(state,options,selected);
+    scene.update(state,options,selected,operation);
+    drawOperation(visible);
     drawExplorer(visible);
     drawGoals();
     drawCoach();
@@ -214,9 +280,9 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
   function run(line) {
     const prompt=state.activeNs+' $ '+line;
     const response=execute(state,line,editor);
-    output=response.clear?[]:[...output,['entered',prompt],[response.ok?'response':'warn',response.text]].slice(-70);
+    if(response.effect||!response.ok||response.clear) setOperation(response.effect,line);
     if(!success) feedback='';
-    drawLog();
+    drawLog(response.clear?[]:[['entered',prompt],[response.ok?'response':'warn',response.text]],response.clear);
     refresh();
   }
   function validate() {
@@ -243,14 +309,18 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
     const node=q('#yaml-result');
     node.textContent=response.text;
     node.classList.toggle('warn',!response.ok);
-    if(response.ok&&!validateOnly) {if(!success) feedback='';refresh();}
+    if(!validateOnly) {
+      setOperation(response.effect,'Aplicar YAML');
+      if(!success && response.ok) feedback='';
+      refresh();
+    }
   }
   function reset() {
     state=createCluster(lesson.seed);
     selected=null;
     editor=firstYaml;
-    output=[['notice',hello]];
     history=[]; historyIndex=0; feedback='';success=false;helper=false;hintCount=0;
+    setOperation(null,'');
     Object.assign(options,{namespace:'*',kind:'*',links:true,pan:false});
     q('#links-switch').checked=true;
     q('#traffic-switch').checked=true;
@@ -267,7 +337,7 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
       q('#builder-namespace-label').hidden=false;
     }
     drawEditor();
-    drawLog();
+    drawLog([['notice',hello]],true);
     refresh();
     toast('Laboratorio reiniciado.');
   }
@@ -290,8 +360,18 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
       q('[data-tab="'+tabId+'"]').focus({preventScroll:true});
     } else if(tabId) {current=tabId;drawTools();}
     if(action==='resources') {selected=null;refresh();q('[data-resource]')?.focus({preventScroll:true});}
-    if(action==='basic'||action==='expert') {options.expert=action==='expert';refresh();}
+    if(action==='basic'||action==='expert') {options.expert=action==='expert';revealAffected=false;refresh();}
     if(action==='pan') {options.pan=!options.pan;refresh();}
+    if(action==='show-affected') {revealAffected=true;refresh();q('canvas').focus({preventScroll:true});}
+    if(action==='clear-affected') {setOperation(null,'');refresh();q('canvas').focus({preventScroll:true});}
+    if(action==='view-focus') {
+      q('.topology').scrollIntoView({block:'start'});
+      q('canvas').focus({preventScroll:true});
+    }
+    if(action==='view-objectives') {
+      q('#lab-goals').scrollIntoView({block:'nearest'});
+      q('#lab-goals').focus({preventScroll:true});
+    }
     if(action==='zoom-in'||action==='zoom-out') scene.zoomBy(action==='zoom-in'?1.15:1/1.15);
     if(action==='camera') scene.reset();
     if(action==='help') {run('kubectl help');command.focus();}
@@ -319,7 +399,7 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
   },{signal});
   root.addEventListener('change',event=>{
     const {id,value,checked}=event.target;
-    if(id==='ns-filter'||id==='kind-filter') {options[id==='ns-filter'?'namespace':'kind']=value;selected=null;refresh();}
+    if(id==='ns-filter'||id==='kind-filter') {options[id==='ns-filter'?'namespace':'kind']=value;selected=null;revealAffected=false;refresh();}
     if(id==='links-switch') {options.links=checked;refresh();}
     if(id==='traffic-switch') scene.setAnimation(checked);
     if(id==='yaml-complete'&&value) {
@@ -351,7 +431,8 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
       const node=q('#builder-result');
       node.textContent=response.text;
       node.classList.toggle('warn',!response.ok);
-      if(response.ok) refresh();
+      setOperation(response.effect,'Crear recurso');
+      refresh();
     }
   },{signal});
   command.addEventListener('keydown',event=>{
@@ -371,7 +452,7 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
     editor=area.value;drawEditor();
   },{signal});
   drawTools();
-  drawLog();
+  drawLog([['notice',hello]]);
   refresh();
   return ()=>{abort.abort();scene.destroy();};
 }

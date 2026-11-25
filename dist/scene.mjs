@@ -1,225 +1,461 @@
-import {list,resourceKey,relationList,statusOf,errorStatus} from './cluster.mjs';
+import {list, resourceKey, relationList, statusOf, errorStatus} from './cluster.mjs';
 
-const palette = {
-  Cluster:'#929bff',Node:'#719cff',Namespace:'#c19aff',Component:'#a79fff',Deployment:'#ad98ff',ReplicaSet:'#c4a4ff',
-  Pod:'#59ddb2',Container:'#9eefcc',Service:'#53c6ec',Ingress:'#78aaff',ConfigMap:'#f5b96e',Secret:'#f588a6',
-  PersistentVolume:'#f4be7b',PersistentVolumeClaim:'#ffd493',Role:'#f492a5',RoleBinding:'#f784ae',NetworkPolicy:'#f7a784'
+const kinds = {
+  Cluster:              {color:'#9b95ff', icon:'cluster', size:[.49,.46,.44]},
+  Node:                 {color:'#77a7ff', icon:'server',  size:[.57,.43,.42]},
+  Namespace:            {color:'#bd9dff', icon:'tag',     size:[.40,.20,.32]},
+  Component:            {color:'#a8a7ff', icon:'chip',    size:[.35,.32,.30], expert:true},
+  Deployment:           {color:'#b59bff', icon:'layers', size:[.44,.48,.36]},
+  ReplicaSet:           {color:'#ceb1ff', icon:'layers', size:[.36,.34,.31], expert:true},
+  Pod:                  {color:'#57e0b1', icon:'box',    size:[.37,.47,.35]},
+  Container:            {color:'#96ebcb', icon:'box',    size:[.13,.23,.13], expert:true},
+  Service:              {color:'#58caed', icon:'network',size:[.43,.48,.36]},
+  Ingress:              {color:'#7d9eff', icon:'gate',   size:[.40,.52,.37]},
+  ConfigMap:            {color:'#ffca85', icon:'file',    size:[.35,.30,.31], expert:true},
+  Secret:               {color:'#f994ad', icon:'lock',    size:[.35,.37,.31], expert:true},
+  PersistentVolume:     {color:'#f7c77d', icon:'disk',    size:[.41,.38,.36], expert:true},
+  PersistentVolumeClaim:{color:'#ffd69d', icon:'disk',    size:[.36,.30,.32], expert:true},
+  Role:                 {color:'#f49bb3', icon:'shield',  size:[.34,.34,.29], expert:true},
+  RoleBinding:          {color:'#f48fb6', icon:'shield',  size:[.34,.34,.29], expert:true},
+  NetworkPolicy:        {color:'#f7af89', icon:'shield',  size:[.39,.41,.32], expert:true}
 };
-const glyphs={Cluster:'CL',Node:'N',Namespace:'NS',Component:'CP',Deployment:'D',ReplicaSet:'RS',Pod:'P',Container:'C',Service:'S',Ingress:'I',ConfigMap:'CM',Secret:'SE',PersistentVolume:'PV',PersistentVolumeClaim:'PVC',Role:'R',RoleBinding:'RB',NetworkPolicy:'NP'};
-const expertTypes=new Set(['Component','Container','ReplicaSet','Role','RoleBinding','NetworkPolicy','Secret','PersistentVolume','PersistentVolumeClaim','ConfigMap']);
-const keys = ['Cluster','Node','Namespace','Deployment','Service','Ingress','Pod','ReplicaSet','Container','Component','ConfigMap','Secret','PersistentVolumeClaim','PersistentVolume','Role','RoleBinding','NetworkPolicy'];
-const sizes={Cluster:[.52,.62,.48],Node:[.65,.47,.48],Namespace:[.42,.2,.4],Pod:[.35,.38,.36],Container:[.24,.28,.24],Component:[.25,.34,.25],Service:[.4,.5,.38],Deployment:[.45,.52,.4],Ingress:[.41,.54,.38]};
-const reduced=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
-const clamp=(number,min,max)=>Math.min(max,Math.max(min,number));
+const order=Object.keys(kinds);
+const colors={
+  dark:{stage:'#101d31',pad:'#16243a',edge:'#304362',bottom:'#101a2b',shadow:'#000711',mesh:'#0a1423',stroke:'#e2ebff',
+    label:'#111d30',text:'#eff5ff',muted:'#a1b4d3',link:'#7b94c1',net:'#66edcf',warn:'#ff8b9b',read:'#8bd8ff',write:'#76f4bf'},
+  light:{stage:'#dce6f4',pad:'#dbe6f5',edge:'#9fb2d0',bottom:'#bbcbe2',shadow:'#7289b1',mesh:'#364d70',stroke:'#243c63',
+    label:'#f7faff',text:'#142643',muted:'#425c7c',link:'#526f98',net:'#00826e',warn:'#a82b49',read:'#176caa',write:'#087553'}
+};
+const glyphPaths={
+  cluster:'M2 12h20M12 2v20M5 5l14 14M5 19 19 5M12 4a8 8 0 1 0 0 16 8 8 0 1 0 0-16',
+  server:'M3 4h18v6H3zM3 14h18v6H3zM6 7h1m2 0h8M6 17h1m2 0h8',
+  box:'m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3ZM4 7.5l8 4.5 8-4.5M12 12v9',
+  tag:'M3 4h11l7 7-10 10-8-8V4Zm5 5h.1',
+  chip:'M6 6h12v12H6zM9 9h6v6H9zM9 2v4m6-4v4M9 18v4m6-4v4M2 9h4m-4 6h4m12-6h4m-4 6h4',
+  layers:'m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5m-18 4 9 5 9-5',
+  network:'M10 3h4v4h-4zM3 17h4v4H3zM17 17h4v4h-4zM12 7v5m-7 5v-5h14v5',
+  gate:'M4 21V5h16v16M7 21V9h10v12M9 15h6m-3-3 3 3-3 3',
+  file:'M5 3h10l4 4v14H5zM14 3v5h5M8 12h8m-8 4h8',
+  lock:'M7 10V7a5 5 0 1 1 10 0v3M5 10h14v11H5zM12 14v3',
+  disk:'M4 6a8 3 0 1 0 16 0 8 3 0 1 0-16 0Zm0 0v12a8 3 0 1 0 16 0V6M4 12a8 3 0 1 0 16 0',
+  shield:'m12 3 8 3v6c0 4-3.5 7-8 9-4.5-2-8-5-8-9V6l8-3Zm-3 9 2 2 4-4'
+};
+const glyphNames={Cluster:'CL',Node:'NO',Namespace:'NS',Component:'CP',Deployment:'DE',ReplicaSet:'RS',Pod:'PO',Container:'CT',Service:'SV',Ingress:'IN',ConfigMap:'CM',Secret:'SE',PersistentVolume:'PV',PersistentVolumeClaim:'PVC',Role:'RO',RoleBinding:'RB',NetworkPolicy:'NP'};
+const hitSlop=3;
+const clamp=(n,min,max)=>Math.min(max,Math.max(min,n));
+const alpha=(color,opacity)=>color+Math.round(clamp(opacity,0,1)*255).toString(16).padStart(2,'0');
 
-export const resourceColor=resource=>palette[resource.kind]??'#a79fff';
-export const resourceGlyph=resource=>glyphs[resource.kind]??'?';
+export const resourceColor=item=>kinds[item.kind]?.color??'#a79fff';
+export const resourceGlyph=item=>glyphNames[item.kind]??'?';
 
-export function visibleResources(state,{expert=false,namespace='*',kind='*'}={}) {
-  return list(state).filter(resource=>{
-    if (kind!=='*' && resource.kind!==kind) return false;
-    if (!expert && kind==='*' && expertTypes.has(resource.kind)) return false;
-    if (namespace!=='*' && resource.kind==='Namespace') return resource.metadata.name===namespace;
-    return namespace==='*' || !resource.metadata.namespace || resource.metadata.namespace===namespace;
-  }).sort((a,b)=>keys.indexOf(a.kind)-keys.indexOf(b.kind) || a.metadata.name.localeCompare(b.metadata.name));
+export function visibleResources(state,{expert=false,namespace='*',kind='*',reveal=new Set()}={}) {
+  return list(state).filter(item=>{
+    if (reveal.has(resourceKey(item))) return true;
+    if (kind!=='*' && item.kind!==kind) return false;
+    if (!expert && kind==='*' && kinds[item.kind]?.expert) return false;
+    if (namespace!=='*' && item.kind==='Namespace') return item.metadata.name===namespace;
+    return namespace==='*' || !item.metadata.namespace || item.metadata.namespace===namespace;
+  }).sort((a,b)=>order.indexOf(a.kind)-order.indexOf(b.kind) || a.metadata.name.localeCompare(b.metadata.name));
 }
 
-function positions(resources) {
-  const result=new Map(), groups=new Map();
-  const home={Cluster:[0,1.8,-2.65],Node:[0,.35,-1.37],Namespace:[0,.07,2.3],Deployment:[0,1.2,.18],Service:[-2.9,.55,.72],Ingress:[-2.95,.88,-.88],Pod:[0,.4,.95],ReplicaSet:[2.72,.9,-.55],Container:[0,.15,3.04],Component:[0,.9,-3.75],ConfigMap:[2.83,.38,1.22],Secret:[2.83,.43,2.08],PersistentVolume:[-2.83,.34,2.21],PersistentVolumeClaim:[-2.85,.3,1.43],Role:[3.34,.34,-1.9],RoleBinding:[3.45,.34,-2.82],NetworkPolicy:[-2.96,.42,-1.88]};
-  for (const resource of resources) {
-    if (!groups.has(resource.kind)) groups.set(resource.kind,[]);
-    groups.get(resource.kind).push(resource);
+const isWorker=item=>item.kind==='Node' && item.sim?.role==='worker';
+
+function layout(items) {
+  const places=new Map(), decks=[];
+  const groups=Object.groupBy(items,item=>item.kind);
+  const get=kind=>groups[kind]??[];
+  const place=(item,x,y,z,deck,details={})=>{
+    if (item) places.set(resourceKey(item),{item,x,y,z,deck,...details});
+  };
+  function addDeck(label,key,x,z,halfWidth,length,color,caption='') {
+    const deck={label,key,x,z,halfWidth,length,color,caption};
+    decks.push(deck);
+    return deck;
   }
-  for (const [kind,items] of groups) {
-    const [baseX,y,z]=home[kind];
-    const cols=kind==='Node'?3:kind==='Pod'||kind==='Container'?7:5;
-    const gap=kind==='Node'?2.25:kind==='Namespace'?1.25:kind==='Pod'?.98:.69;
-    items.forEach((item,index)=>{
-      const col=index%cols;
-      const row=Math.floor(index/cols);
-      const count=Math.min(cols,items.length-row*cols);
-      result.set(resourceKey(item),[baseX+(col-(count-1)/2)*gap,y,z+row*.8]);
-    });
+  function arrange(items,deck,columns,{start=.91,step=.75,space=1.06}={}) {
+    for (const [i,item] of items.entries()) {
+      const count=Math.min(columns,items.length-Math.floor(i/columns)*columns);
+      const x=deck.x+((i%columns)-(count-1)/2)*space;
+      place(item,x,.19,deck.z+start+Math.floor(i/columns)*step,deck);
+    }
   }
-  return result;
+  const left=-2.35, right=2.35;
+  const control=get('Node').find(node=>!isWorker(node));
+  const cluster=get('Cluster')[0];
+  const namespaces=get('Namespace'), components=get('Component');
+  const services=[...get('Ingress'),...get('Service'),...get('Deployment'),...get('ReplicaSet'),...get('NetworkPolicy')];
+  const controlRows=(cluster||control?1:0)+Math.ceil(components.length/3)+Math.ceil(namespaces.length/3);
+  const rearLength=Math.max(2.30,1.12+Math.max(controlRows,Math.ceil(services.length/3))*.82);
+  if (controlRows) {
+    const deck=addDeck('Plano de control','control',left,0,2.12,rearLength,'#9b95ff');
+    place(cluster,left-.76,.19,.90,deck);
+    place(control,left+.76,.19,.90,deck);
+    arrange(components,deck,3,{start:(cluster||control?1.72:.86),step:.82,space:1.23});
+    arrange(namespaces,deck,3,{start:(cluster||control?1.72:.86)+Math.ceil(components.length/3)*.82,step:.82,space:1.23});
+  }
+  const appDeck=addDeck('Aplicación y red','apps',right,0,2.12,rearLength,'#6ebcfa',services.length?'':'Sin cargas de aplicación');
+  arrange(services,appDeck,3,{start:.93,step:.82,space:1.24});
+
+  const podsByNode=Object.groupBy(get('Pod'),pod=>pod.status?.node??'pending');
+  const containersByPod=Object.groupBy(get('Container'),container=>container.sim.owner);
+  const workers=get('Node').filter(isWorker);
+  const rows=Math.max(1,...Object.values(podsByNode).map(pods=>Math.ceil(pods.length/3)));
+  const workerLength=2.45+(rows-1)*1.03, front=rearLength+.37;
+
+  function placePods(pods,deck,start) {
+    const slots=[0,-1,1];
+    for(const [index,pod] of pods.entries()) {
+      const key=resourceKey(pod), x=deck.x+slots[index%3]*1.14, z=deck.z+start+Math.floor(index/3)*1.03;
+      place(pod,x,.19,z,deck);
+      for(const [i,container] of (containersByPod[key]??[]).entries()) {
+        place(container,x-.26+i*.18,.69,z,deck,{small:true});
+      }
+    }
+  }
+  for (const [index,node] of workers.entries()) {
+    const pods=podsByNode[resourceKey(node)]??[];
+    const count=pods.length;
+    const deck=addDeck(node.metadata.name,resourceKey(node),index%2?right:left,front+Math.floor(index/2)*(workerLength+.36),2.12,workerLength,
+      '#77a7ff',count===1?'1 Pod':count===0?'Sin Pods':count+' Pods');
+    place(node,deck.x,.19,deck.z+.76,deck,{noLabel:true});
+    placePods(pods,deck,1.72);
+  }
+
+  const misc=items.filter(item=>!places.has(resourceKey(item)) && !['Pod','Container'].includes(item.kind));
+  const unassigned=get('Pod').filter(item=>!places.has(resourceKey(item)));
+  const extraZ=front+Math.max(1,Math.ceil(workers.length/2))*(workerLength+.36);
+  if (misc.length) {
+    const deck=addDeck('Configuración y almacenamiento','config',left,extraZ,2.12,1.23+Math.ceil(misc.length/3)*.78,'#ffc485');
+    arrange(misc,deck,3);
+  }
+  if (unassigned.length) {
+    const deck=addDeck('Sin nodo asignado','pending',right,extraZ,2.12,1.05+Math.ceil(unassigned.length/3)*1.03,'#fa9ca6');
+    placePods(unassigned,deck,1.0);
+  }
+  return {places,decks};
 }
 
-export function mountScene(canvas,{onSelect}) {
+function footprint(x,y,z,left,right,back,front,cut) {
+  return [[x-left+cut,y,z-back],[x+right-cut,y,z-back],[x+right,y,z-back+cut],[x+right,y,z+front-cut],
+    [x+right-cut,y,z+front],[x-left+cut,y,z+front],[x-left,y,z+front-cut],[x-left,y,z-back+cut]];
+}
+
+function within([x,y],points) {
+  let inside=false;
+  for (let i=0,j=points.length-1;i<points.length;j=i++) {
+    const [a,b]=points[i], [c,d]=points[j];
+    if ((b>y)!==(d>y) && x<(c-a)*(y-b)/(d-b)+a) inside=!inside;
+  }
+  return inside;
+}
+function overlap(a,b,pad=2) {
+  return a.x<b.x+b.w+pad && a.x+a.w+pad>b.x && a.y<b.y+b.h+pad && a.y+a.h+pad>b.y;
+}
+const font=(weight,size)=>weight+' '+size+'px "DM Sans",system-ui,sans-serif';
+function displayName(item) {
+  if (item.kind==='Cluster') return 'Clúster';
+  if (item.kind==='Node'&&item.sim?.role==='control-plane') return 'Control Plane';
+  if (['Ingress','Service','Deployment','ReplicaSet'].includes(item.kind)) return item.kind+' · '+item.metadata.name;
+  return item.metadata.name;
+}
+
+export function mountScene(canvas,{onSelect,onHover}) {
   const ctx=canvas.getContext('2d');
-  let state,options={},items=[],edges=[],locations=new Map(),hits=[],w=1,h=1,frame=0,drag=null;
-  let yaw=-.52,pitch=.58,zoom=1,dx=0,dy=0, animation=true, selected=null;
-  const controls=new AbortController();
-  const signal=controls.signal;
+  const paths=Object.fromEntries(Object.entries(glyphPaths).map(([name,d])=>[name,new Path2D(d)]));
+  const controls=new AbortController(), signal=controls.signal;
+  const motion=matchMedia('(prefers-reduced-motion: reduce)');
+  let state,options,selected,operation,items=new Set(),edges=[],locations=new Map(),decks=[],frame=0,w=1,h=1;
+  let hitAreas=[], focusKeys=new Set(), highlightStart=0, hovered=null, drag=null, animation=true, inView=true;
+  let yaw=-.35,pitch=.72,zoom=1,dx=0,dy=0;
+  let view;
   const resize=new ResizeObserver(()=>{
-    const bounds=canvas.getBoundingClientRect();
-    w=Math.max(1,bounds.width);h=Math.max(1,bounds.height);
+    const rect=canvas.getBoundingClientRect();
+    w=Math.max(1,rect.width);h=Math.max(1,rect.height);
     const ratio=Math.min(2,window.devicePixelRatio||1);
     canvas.width=Math.round(w*ratio);canvas.height=Math.round(h*ratio);
     ctx.setTransform(ratio,0,0,ratio,0,0);
     schedule();
   });
   resize.observe(canvas);
-  function schedule() {if (!frame) frame=requestAnimationFrame(draw);}
-  function project([x,y,z]) {
-    const scale=Math.min(w/9.6,h/6.8)*zoom;
-    const side=x*Math.cos(yaw)-z*Math.sin(yaw);
-    const deep=x*Math.sin(yaw)+z*Math.cos(yaw);
-    const vertical=deep*Math.sin(pitch)-y*Math.cos(pitch);
-    return [w*.50+dx+side*scale,h*.52+dy+vertical*scale,deep*Math.cos(pitch)+y*Math.sin(pitch)];
+  const observer=new IntersectionObserver(([entry])=>{inView=entry.isIntersecting;if(inView)schedule();});
+  observer.observe(canvas);
+  function schedule(){if(!frame)frame=requestAnimationFrame(draw);}
+  function rawProject([x,y,z]) {
+    const side=x*view.cosYaw-z*view.sinYaw, depth=x*view.sinYaw+z*view.cosYaw;
+    return [side,depth*view.sinPitch-y*view.cosPitch,depth*view.cosPitch+y*view.sinPitch];
   }
-  function line(a,b,color,width=1,dash=[]) {
-    ctx.beginPath();
-    ctx.strokeStyle=color;ctx.lineWidth=width;ctx.setLineDash(dash);
-    ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();
-    ctx.setLineDash([]);
+  function project(point) {
+    const [x,y,z]=rawProject(point);
+    return [view.cx+x*view.scale,view.cy+y*view.scale,z];
   }
-  function face(points,fill,stroke,width=1) {
+  function fit() {
+    view={cosYaw:Math.cos(yaw),sinYaw:Math.sin(yaw),cosPitch:Math.cos(pitch),sinPitch:Math.sin(pitch)};
+    const limits=decks.flatMap(deck=>footprint(deck.x,0,deck.z,deck.halfWidth,deck.halfWidth,0,deck.length,.14).map(rawProject));
+    for (const {x,y,z,item} of locations.values()) {
+      const size=kinds[item.kind].size;
+      limits.push(rawProject([x-size[0],y+size[1],z-size[2]]),rawProject([x+size[0],y+size[1],z+size[2]]));
+    }
+    const xs=limits.map(point=>point[0]),ys=limits.map(point=>point[1]);
+    const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
+    const base=Math.min((w-(w<440?22:51))/Math.max(1,maxX-minX),(h-52)/Math.max(1,maxY-minY));
+    const scale=Math.max(4,base)*zoom;
+    Object.assign(view,{scale,cx:w/2-(minX+maxX)/2*scale+dx,cy:h/2-(minY+maxY)/2*scale+dy});
+  }
+  function polygon(points,fill,stroke,width=1) {
     ctx.beginPath();
-    ctx.moveTo(points[0][0],points[0][1]);
-    for (const point of points.slice(1)) ctx.lineTo(point[0],point[1]);
+    points.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));
     ctx.closePath();
-    ctx.fillStyle=fill;ctx.fill();
+    if (fill) {ctx.fillStyle=fill;ctx.fill();}
     if (stroke) {ctx.strokeStyle=stroke;ctx.lineWidth=width;ctx.stroke();}
   }
-  function cube(point,dims,color,highlight,light){
-    const [x,y,z]=point,[a,b,c]=dims;
-    const verts=[
-      [x-a,y-b/2,z-c],[x+a,y-b/2,z-c],[x+a,y-b/2,z+c],[x-a,y-b/2,z+c],
-      [x-a,y+b/2,z-c],[x+a,y+b/2,z-c],[x+a,y+b/2,z+c],[x-a,y+b/2,z+c]
-    ].map(project);
-    const faces=[[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7],[4,5,6,7]].map((ids,i)=>{
-      const points=ids.map(index=>verts[index]);
-      return {points,i,depth:points.reduce((sum,point)=>sum+point[2],0)/4};
-    }).sort((a,b)=>a.depth-b.depth);
-    for (const {points,i} of faces) {
-      const fill=i===4?color+(light?'bd':'74'):color+(light?'84':'48');
-      face(points,fill,highlight?(light?'#12396e':'#ecf8ff'):color+(light?'d3':'b5'),highlight?1.7:1);
+  function stroke(points,color,width=1,dash=[]) {
+    ctx.beginPath();
+    points.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));
+    ctx.strokeStyle=color;ctx.lineWidth=width;ctx.setLineDash(dash);ctx.stroke();ctx.setLineDash([]);
+  }
+  function dot(x,y,size,color) {
+    ctx.beginPath();ctx.arc(x,y,size,0,2*Math.PI);ctx.fillStyle=color;ctx.fill();
+  }
+  function stack(rings,faceColors,edge) {
+    const projected=rings.map(ring=>ring.map(project));
+    const faces=[];
+    for (let tier=1;tier<projected.length;tier++) {
+      const lower=projected[tier-1],upper=projected[tier];
+      for(let i=0;i<upper.length;i++) {
+        const j=(i+1)%upper.length;
+        const points=[lower[i],lower[j],upper[j],upper[i]];
+        faces.push({points,fill:faceColors(tier,i),depth:points.reduce((sum,p)=>sum+p[2],0)/4});
+      }
     }
-    return {
-      minX:Math.min(...verts.map(v=>v[0])),maxX:Math.max(...verts.map(v=>v[0])),
-      minY:Math.min(...verts.map(v=>v[1])),maxY:Math.max(...verts.map(v=>v[1]))
+    faces.sort((a,b)=>a.depth-b.depth);
+    for(const face of faces) polygon(face.points,face.fill,edge);
+    return {cap:projected.at(-1),foot:projected[0],faces};
+  }
+  function drawDeck(deck,theme,light) {
+    const {x,z,halfWidth:a,length:b,color}=deck;
+    const cut=.14;
+    const ring=(y,inset=0)=>footprint(x,y,z,a-inset,a-inset,-inset,b-inset,cut);
+    ctx.save();
+    ctx.shadowColor=alpha(theme.shadow,light?.20:.60);ctx.shadowBlur=12;ctx.shadowOffsetY=5;
+    polygon(ring(-.10).map(project),theme.bottom);
+    ctx.restore();
+    const {cap}=stack([ring(-.11),ring(.02)],()=>theme.bottom,theme.edge);
+    const [first,,,,last]=cap;
+    const gradient=ctx.createLinearGradient(first[0],first[1],last[0],last[1]);
+    gradient.addColorStop(0,theme.pad);gradient.addColorStop(1,theme.stage);
+    polygon(cap,gradient,theme.edge);
+    polygon(ring(.025,.11).map(project),null,alpha(color,light?.34:.26));
+  }
+  function edgePath(from,to,type) {
+    const a=project([from.x,from.y+.10,from.z]), b=project([to.x,to.y+.10,to.z]);
+    const raise=type==='tráfico'||type==='bloqueado'?Math.min(40,7+Math.hypot(b[0]-a[0],b[1]-a[1])*.10):7;
+    const control=[(a[0]+b[0])/2,(a[1]+b[1])/2-raise];
+    return {a,b,control};
+  }
+  function drawEdge(edge,index,now,theme) {
+    const from=locations.get(edge.from),to=locations.get(edge.to);
+    const active=focusKeys.has(edge.from)||focusKeys.has(edge.to)||selected===edge.from||selected===edge.to||hovered===edge.from||hovered===edge.to;
+    const network=edge.type==='tráfico', blocked=edge.type==='bloqueado', structural=edge.type==='estructura';
+    if (structural && !active) return;
+    const muted=blocked&&options.hideErrors&&!active;
+    const color=network?theme.net:blocked&&!muted?theme.warn:theme.link;
+    const opacity=active?.97:network?.80:blocked&&!muted?.76:.34;
+    const {a,b,control}=edgePath(from,to,edge.type);
+    ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.quadraticCurveTo(control[0],control[1],b[0],b[1]);
+    ctx.strokeStyle=alpha(color,opacity);ctx.lineWidth=network||active?1.8:1;
+    ctx.setLineDash(blocked?[4,5]:structural?[3,5]:[]);ctx.stroke();ctx.setLineDash([]);
+    if (network&&animation&&!motion.matches) {
+      const t=(now/2200+index*.21)%1, r=1-t;
+      const x=r*r*a[0]+2*r*t*control[0]+t*t*b[0],y=r*r*a[1]+2*r*t*control[1]+t*t*b[1];
+      dot(x,y,5,alpha(color,.21));dot(x,y,2.8,color);
+    }
+  }
+  function drawObject(record,theme,light,now) {
+    const {item,x,y,z,small}=record;
+    const key=resourceKey(item), focused=focusKeys.has(key), chosen=selected===key, pointed=hovered===key;
+    const fault=errorStatus(statusOf(item)) && (!options.hideErrors||focused||chosen||state.inspected.has(item.kind+'/'+item.metadata.name));
+    const color=fault?theme.warn:resourceColor(item);
+    const focusColor=operation?.effect.type==='write'?theme.write:theme.read;
+    const [a,height,c]=kinds[item.kind].size;
+    const cut=Math.min(a,c)*(item.kind==='Service'?.51:item.kind==='Pod'?.34:.22);
+    const shape=(level,inset=0)=>footprint(x,level,z,a-inset,a-inset,c-inset,c-inset,Math.max(.018,cut-inset/2));
+    const halo=(expansion,opacity)=>{
+      const ring=footprint(x,.08,z,a+expansion,a+expansion,c+expansion,c+expansion,cut).map(project);
+      polygon(ring,alpha(focusColor,opacity*.15),alpha(focusColor,opacity),focused?1.4:1);
     };
+
+    ctx.save();
+    if (focusKeys.size&&!focused&&!chosen&&!pointed) ctx.globalAlpha=.79;
+    if (focused||chosen||pointed) halo(.15,focused?.98:.76);
+    if (focused&&!motion.matches && now-highlightStart<850) {
+      const t=clamp((now-highlightStart)/850,0,1);
+      halo(.15+t*.30,.74*(1-t));
+    }
+    const bottom=y+(small?0:-.05), capY=bottom+height;
+    polygon(footprint(x,Math.max(.035,bottom-.02),z,a+.08,a+.08,c+.07,c+.07,cut).map(project),alpha(theme.shadow,light?.24:.62));
+    const {cap,faces}=stack([shape(bottom),shape(capY-.085),shape(capY,.056)],(tier,i)=> {
+      const side=tier===2?(i<3?.66:.49):(i===2||i===3?.48:.34);
+      return alpha(color,light?side+.29:side);
+    },alpha(color,light?.66:.51));
+    const [start,,,,end]=cap;
+    const sheen=ctx.createLinearGradient(start[0],start[1],end[0],end[1]);
+    sheen.addColorStop(0,alpha(color,light?.90:.84));sheen.addColorStop(1,alpha(color,light?.59:.46));
+    polygon(cap,sheen,focused?focusColor:alpha(color,.92),focused?1.55:1);
+    const top=project([x,capY+.016,z]);
+    const iconSize=clamp(view.scale*(small?.26:.39),small?7:12,small?13:25);
+    ctx.save();
+    ctx.translate(top[0]-iconSize/2,top[1]-iconSize/2);
+    ctx.scale(iconSize/24,iconSize/24);
+    ctx.strokeStyle=light?'#172947':'#f4f8ff';
+    ctx.lineWidth=1.65;ctx.lineCap='round';ctx.lineJoin='round';
+    ctx.stroke(paths[kinds[item.kind].icon]);
+    ctx.restore();
+
+    if (fault&&!small) {
+      const [sx,sy]=project([x+a*.60,capY+.13,z+c*.64]);
+      dot(sx,sy,5,theme.label);dot(sx,sy,3.1,theme.warn);
+    }
+    ctx.restore();
+    return {record,key,focused,chosen,pointed,fault,cap,faces,x:top[0],y:top[1],rim:Math.max(...cap.map(p=>p[1]))};
+  }
+  function pill(text,x,y,theme,{accent,priority=false,secondary=false}={}) {
+    const size=secondary?10:11;
+    ctx.font=font(priority?750:650,size);ctx.textAlign='left';ctx.textBaseline='middle';
+    const max=w<430?101:155;
+    let label=text;
+    while(ctx.measureText(label).width>max && label.length>2) label=label.slice(0,-2)+'…';
+    const inner=ctx.measureText(label).width+12+(accent?8:0),height=secondary?17:19;
+    const box={x:clamp(x-inner/2,4,Math.max(4,w-inner-4)),y:clamp(y,4,Math.max(4,h-height-4)),w:inner,h:height};
+    return {box,paint(){
+      ctx.beginPath();ctx.roundRect(box.x,box.y,box.w,box.h,5);
+      ctx.fillStyle=theme.label;ctx.fill();
+      ctx.strokeStyle=alpha(accent??theme.edge,priority?.86:.56);ctx.lineWidth=1;ctx.stroke();
+      if(accent)dot(box.x+7,box.y+height/2,2.5,accent);
+      ctx.font=font(priority?750:650,size);ctx.fillStyle=secondary?theme.muted:theme.text;
+      ctx.fillText(label,box.x+(accent?13:6),box.y+height/2+.25);
+    }};
   }
   function draw(now) {
     frame=0;
     ctx.clearRect(0,0,w,h);
-    if (!state) return;
-    const light=document.documentElement.dataset.theme==='light';
-    const grid=light?'#b3c5df8c':'#263a5c82';
-    const area=[[-3.7,-.12,-3.8],[3.7,-.12,-3.8],[3.7,-.12,3.8],[-3.7,-.12,3.8]].map(project);
-    face(area,light?'#dce9f6be':'#1421389a',light?'#b2c4df':'#40527b');
-    for (let i=-3.5;i<=3.5;i+=.5) {
-      line(project([i,-.11,-3.75]),project([i,-.11,3.75]),grid);
-      line(project([-3.65,-.11,i]),project([3.65,-.11,i]),grid);
-    }
-    if (options.links!==false) for (const [index,edge] of edges.entries()) {
-      const a=locations.get(edge.from),b=locations.get(edge.to);
-      const pointA=project(a),pointB=project(b);
-      const via=[(pointA[0]+pointB[0])/2,(pointA[1]+pointB[1])/2-15];
-      const traffic=edge.type==='tráfico',blocked=edge.type==='bloqueado';
-      const color=traffic?(light?'#168c7e':'#63ecd3'):blocked?(options.hideErrors?'#8194b27d':'#fb8997'):(light?'#647fa5a0':'#718bbc8f');
-      const dash=traffic?[]:blocked?[4,5]:[3,5];
-      line(pointA,via,color,traffic?1.65:1,dash);line(via,pointB,color,traffic?1.65:1,dash);
-      if (traffic && animation && !reduced()) {
-        const t=(now/2150+index*.23)%1;
-        const [a,b,f]=t<.5?[pointA,via,t*2]:[via,pointB,(t-.5)*2];
-        ctx.beginPath();
-        ctx.arc(a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f,3,0,Math.PI*2);
-        ctx.fillStyle=light?'#087f6c':'#a5ffe6';ctx.fill();
+    if (!state||!decks.length) return;
+    const light=document.documentElement.dataset.theme==='light', theme=colors[light?'light':'dark'];
+    fit();
+    const orderedDecks=[...decks].sort((a,b)=>project([a.x,0,a.z+a.length/2])[2]-project([b.x,0,b.z+b.length/2])[2]);
+    for(const deck of orderedDecks) drawDeck(deck,theme,light);
+    if(options.links) edges.forEach((edge,index)=>drawEdge(edge,index,now,theme));
+    const ordered=[...locations.values()].filter(place=>items.has(resourceKey(place.item))).sort((a,b)=>project([a.x,a.y,a.z])[2]-project([b.x,b.y,b.z])[2]);
+    const shapes=ordered.map(record=>drawObject(record,theme,light,now));
+    hitAreas=shapes.map(shape=>({key:shape.key,areas:[shape.cap,...shape.faces.map(face=>face.points)]}));
+    const occupied=[];
+    for(const deck of orderedDecks) {
+      const rear=deck.key==='control'||deck.key==='apps';
+      const [x,y]=project([deck.x,0,deck.z+(rear?0:deck.length+.09)]);
+      const label=pill(deck.label,x,y+(rear?-25:7),theme,{accent:deck.color});
+      if(!occupied.some(box=>overlap(box,label.box))) {label.paint();occupied.push(label.box);}
+      if (deck.caption && w>510) {
+        const caption=pill(deck.caption,x,rear?label.box.y-19:label.box.y+21,theme,{secondary:true});
+        if(!occupied.some(box=>overlap(box,caption.box))) {caption.paint();occupied.push(caption.box);}
       }
     }
-    hits=[];
-    const labels=[];
-    const visible=items.map(resource=>({resource,point:locations.get(resourceKey(resource))})).sort((a,b)=>project(a.point)[2]-project(b.point)[2]);
-    for (const {resource,point} of visible) {
-      const key=resourceKey(resource);
-      const highlight=selected===key;
-      const fault=errorStatus(statusOf(resource)) && (!options.hideErrors || selected===key);
-      const color=fault?'#fa7f8f':resourceColor(resource);
-      let dims=sizes[resource.kind]??[.31,.35,.32];
-      if (items.length>32 && resource.kind!=='Cluster' && resource.kind!=='Node') dims=dims.map(value=>value*.75);
-      const bounds=cube(point,dims,color,highlight,light);
-      hits.push({key,...bounds});
-      const mid=project(point);
-      ctx.font='700 '+(resource.kind==='Node'?11:10)+'px "DM Sans",sans-serif';
-      ctx.fillStyle=light?'#183354':'#edf5ff';
-      ctx.textAlign='center';ctx.textBaseline='middle';
-      ctx.fillText(resourceGlyph(resource),mid[0],mid[1]+1);
-      if (resource.kind==='Cluster' || resource.kind==='Node' || resource.kind==='Pod' || resource.kind==='Service' || highlight || options.focus===resource.kind && fault || items.length<12) {
-        labels.push({name:resource.kind==='Cluster'?'Clúster':resource.metadata.name,x:mid[0],y:bounds.maxY+5,fault,highlight});
-      }
+    const priority=shape=>(shape.chosen||shape.pointed?6:0)+(shape.focused?4:0)+(shape.fault?3:0)+(shape.record.item.kind==='Pod'?2:0);
+    for(const shape of [...shapes].sort((a,b)=>priority(b)-priority(a))) {
+      const active=shape.focused||shape.chosen||shape.pointed;
+      if (!active&&(shape.record.noLabel||shape.record.small||items.size>24&&priority(shape)<2)) continue;
+      const {item}=shape.record;
+      const name=displayName(item);
+      const activeAccent=operation?.effect.type==='write'?theme.write:theme.read;
+      const accent=shape.fault?theme.warn:active?activeAccent:null;
+      const y=shape.rim+4;
+      const candidates=[[shape.x,y],[shape.x,shape.y-31],[shape.x-28,y+6],[shape.x+28,y+6]];
+      const label=candidates.map(([x,y])=>pill(name,x,y,theme,{accent,priority:active})).find(item=>!occupied.some(box=>overlap(box,item.box)));
+      if (!label) continue;
+      label.paint();occupied.push(label.box);
+      hitAreas.push({key:shape.key,box:label.box});
     }
-    labels.sort((a,b)=>Number(a.highlight)-Number(b.highlight));
-    const labeled=[];
-    for (const label of labels) {
-      ctx.font=(label.highlight?'700 ':'600 ')+'11px "DM Sans",sans-serif';ctx.textBaseline='top';
-      const text=label.name.length>23?label.name.slice(0,22)+'…':label.name;
-      const width=ctx.measureText(text).width+9;
-      const box={x:label.x-width/2,y:label.y,w:width,h:17};
-      if(!label.highlight && labeled.some(item=>item.x+item.w>box.x && item.x<box.x+box.w && item.y+item.h>box.y && item.y<box.y+box.h)) continue;
-      labeled.push(box);
-      ctx.fillStyle=light?'#f2f7feed':'#0a1427e8';
-      ctx.beginPath();ctx.roundRect(box.x,box.y,box.w,box.h,4);ctx.fill();
-      ctx.fillStyle=label.fault?(light?'#a62038':'#ffb6be'):(light?'#253c61':'#d9e5fc');
-      ctx.fillText(text,label.x,label.y+3);
-    }
-    if (animation && !reduced() && options.links!==false && edges.some(edge=>edge.type==='tráfico') && !document.hidden) schedule();
+    if(inView&&!document.hidden&&!motion.matches&&((animation&&options.links&&edges.some(edge=>edge.type==='tráfico'))||(focusKeys.size&&now-highlightStart<850))) schedule();
+  }
+
+  function hit(event) {
+    const rect=canvas.getBoundingClientRect(), x=event.clientX-rect.left,y=event.clientY-rect.top;
+    return hitAreas.findLast(entry=>entry.box
+      ?x>=entry.box.x-hitSlop&&x<=entry.box.x+entry.box.w+hitSlop&&y>=entry.box.y-hitSlop&&y<=entry.box.y+entry.box.h+hitSlop
+      :entry.areas.some(points=>within([x,y],points)))?.key??null;
+  }
+  function hover(key) {
+    if (hovered===key) return;
+    hovered=key;
+    canvas.style.cursor=options?.pan?'move':key?'pointer':'grab';
+    onHover?.(key);
+    schedule();
   }
   canvas.addEventListener('pointerdown',event=>{
+    if (event.button===1) return;
     canvas.setPointerCapture(event.pointerId);
-    drag={x:event.clientX,y:event.clientY,started:false,pan:event.shiftKey || event.button===2 || options.pan};
+    drag={x:event.clientX,y:event.clientY,started:false,pan:event.shiftKey||event.button===2||options.pan};
   },{signal});
   canvas.addEventListener('pointermove',event=>{
-    if(!drag)return;
-    const a=event.clientX-drag.x,b=event.clientY-drag.y;
-    if (!drag.started && Math.abs(a)+Math.abs(b)<3)return;
+    if (!drag) {hover(hit(event));return;}
+    const x=event.clientX-drag.x,y=event.clientY-drag.y;
+    if (!drag.started&&Math.abs(x)+Math.abs(y)<3) return;
     drag.started=true;
-    if (drag.pan) {dx+=a;dy+=b;}
-    else {yaw+=a*.009;pitch=clamp(pitch+b*.009,.21,1.27);}
+    hover(null);
+    if(drag.pan){dx+=x;dy+=y;}
+    else{yaw+=x*.008;pitch=clamp(pitch+y*.008,.30,1.44);}
     drag.x=event.clientX;drag.y=event.clientY;schedule();
   },{signal});
   canvas.addEventListener('pointerup',event=>{
-    if (drag && !drag.started) {
-      const rect=canvas.getBoundingClientRect(),x=event.clientX-rect.left,y=event.clientY-rect.top;
-      const hit=hits.findLast(({minX,maxX,minY,maxY})=>x>=minX-2 && x<=maxX+2 && y>=minY-2 && y<=maxY+2);
-      if (hit) onSelect(hit.key);
-    }
+    if(drag&&!drag.started&&event.button!==2){const key=hit(event);if(key)onSelect(key);}
     drag=null;
   },{signal});
-  canvas.addEventListener('pointercancel',()=>{drag=null;},{signal});
+  canvas.addEventListener('pointercancel',()=>{drag=null;hover(null);},{signal});
+  canvas.addEventListener('pointerleave',()=>hover(null),{signal});
   canvas.addEventListener('contextmenu',event=>event.preventDefault(),{signal});
   canvas.addEventListener('wheel',event=>{
-    if (!event.ctrlKey && document.activeElement!==canvas) return;
-    event.preventDefault();zoom=clamp(zoom*Math.exp(-event.deltaY*.002),.5,3);schedule();
+    if(!event.ctrlKey&&document.activeElement!==canvas)return;
+    event.preventDefault();zoom=clamp(zoom*Math.exp(-event.deltaY*.002),.55,3.5);schedule();
   },{passive:false,signal});
   canvas.addEventListener('keydown',event=>{
-    if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','+','-','0'].includes(event.key)) return;
+    const key=event.key;
+    if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','+','=','-','0'].includes(key)) return;
     event.preventDefault();
-    if (event.key==='ArrowLeft') yaw-=.11;
-    if (event.key==='ArrowRight') yaw+=.11;
-    if (event.key==='ArrowUp') pitch=clamp(pitch-.08,.21,1.27);
-    if (event.key==='ArrowDown') pitch=clamp(pitch+.08,.21,1.27);
-    if (event.key==='+') zoom=clamp(zoom*1.15,.5,3);
-    if (event.key==='-') zoom=clamp(zoom/1.15,.5,3);
-    if (event.key==='0') reset();
+    if(key==='0'){reset();return;}
+    if(['+','=','-'].includes(key)){zoomBy(key==='-'?1/1.15:1.15);return;}
+    if(options.pan||event.shiftKey) {
+      dx+=key==='ArrowLeft'?-16:key==='ArrowRight'?16:0;
+      dy+=key==='ArrowUp'?-16:key==='ArrowDown'?16:0;
+    } else {
+      yaw+=key==='ArrowLeft'?-.11:key==='ArrowRight'?.11:0;
+      pitch=clamp(pitch+(key==='ArrowUp'?-.07:key==='ArrowDown'?.07:0),.30,1.44);
+    }
     schedule();
   },{signal});
   window.addEventListener('kubepath:theme',schedule,{signal});
   document.addEventListener('visibilitychange',schedule,{signal});
-  function reset(){yaw=-.52;pitch=.58;zoom=1;dx=0;dy=0;schedule();}
+  motion.addEventListener('change',schedule,{signal});
+  document.fonts.ready.then(()=>{if(!signal.aborted)schedule();});
+  function reset(){yaw=-.35;pitch=.72;zoom=1;dx=0;dy=0;schedule();}
+  function zoomBy(value){zoom=clamp(zoom*value,.55,3.5);schedule();}
+
   return {
-    update(next,config,select) {
+    update(next,config,select,op) {
       state=next;options=config;selected=select;
-      items=visibleResources(state,options);
-      locations=positions(items);
-      edges=relationList(state).filter(edge=>locations.has(edge.from) && locations.has(edge.to));
-      canvas.style.cursor=options.pan?'move':'grab';
+      items=new Set(visibleResources(state,options).map(resourceKey));
+      const context=visibleResources(state,{expert:options.expert,reveal:items});
+      const {places,decks:shownDecks}=layout(context);
+      locations=places;
+      decks=shownDecks;
+      edges=relationList(state).filter(edge=>items.has(edge.from)&&items.has(edge.to)&&locations.has(edge.from)&&locations.has(edge.to)&&
+        !(edge.type==='gestión' && items.has(state.resources[edge.to]?.sim?.owner)));
+      if(operation!==op) highlightStart=performance.now();
+      operation=op;
+      focusKeys=op?.keys??new Set();
+      if (hovered&&!items.has(hovered)) hover(null);
+      canvas.style.cursor=options.pan?'move':hovered?'pointer':'grab';
       schedule();
     },
-    reset,
-    zoomBy(value){zoom=clamp(zoom*value,.5,3);schedule();},
+    reset,zoomBy,
     setAnimation(value){animation=value;schedule();},
-    destroy(){controls.abort();resize.disconnect();cancelAnimationFrame(frame);}
+    destroy(){controls.abort();resize.disconnect();observer.disconnect();cancelAnimationFrame(frame);}
   };
 }

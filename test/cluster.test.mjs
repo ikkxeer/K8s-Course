@@ -94,3 +94,53 @@ test('successful lessons grant experience once and survive reload',()=>{
   assert.equal(stats(readProgress(adapter),now).xp,80);
   assert.equal(stats(readProgress(adapter),now).streak,1);
 });
+
+test('the command reports exactly the pods returned by its namespace and selector',()=>{
+  const state=createCluster('service');
+  cmd(state,'kubectl create namespace equipo');
+  cmd(state,'kubectl run otro --image=nginx -n equipo --labels=app=otro');
+  cmd(state,'kubectl run copia --image=nginx -n equipo --labels=app=atlas');
+
+  assert.deepEqual(execute(state,'kubectl get pods').effect,{type:'read',keys:['Pod/default/atlas-r1-1','Pod/default/atlas-r1-2']});
+  assert.deepEqual(execute(state,'kubectl get po -n equipo -l app=otro -o name').effect.keys,['Pod/equipo/otro']);
+  assert.deepEqual(execute(state,'kubectl get pods -A -l app=atlas -o json').effect.keys,
+    ['Pod/equipo/copia','Pod/default/atlas-r1-1','Pod/default/atlas-r1-2']);
+  assert.deepEqual(execute(state,'kubectl get pods -n equipo -l app=inexistente').effect.keys,[]);
+});
+
+test('diagnostics identify the resources used to produce their output',()=>{
+  const state=createCluster('service');
+  assert.deepEqual(execute(state,'kubectl logs atlas-r1-2').effect.keys,['Pod/default/atlas-r1-2']);
+  assert.deepEqual(execute(state,'kubectl describe deploy atlas').effect.keys,['Deployment/default/atlas']);
+  assert.deepEqual(execute(state,'kubectl top pod atlas-r1-1').effect.keys,['Pod/default/atlas-r1-1']);
+  assert.deepEqual(execute(state,'kubectl get endpoints atlas').effect.keys,
+    ['Service/default/atlas','Pod/default/atlas-r1-1','Pod/default/atlas-r1-2']);
+
+  const incident=createCluster('bad-image');
+  assert.ok(execute(incident,'kubectl get events').effect.keys.includes('Pod/default/atlas-r2-1'));
+  assert.equal(execute(incident,'kubectl logs no-existe').effect,undefined);
+});
+
+test('mutations report actual changes and controller side effects',()=>{
+  const state=createCluster('service');
+  const scaled=execute(state,'kubectl scale deployment/atlas --replicas=3');
+  assert.equal(scaled.effect.type,'write');
+  assert.ok(scaled.effect.created.includes('Pod/default/atlas-r1-3'));
+  assert.ok(scaled.effect.updated.includes('Deployment/default/atlas'));
+  assert.ok(scaled.effect.updated.includes('Service/default/atlas'));
+  assert.ok(!scaled.effect.updated.includes('Pod/default/atlas-r1-1'));
+  assert.deepEqual(scaled.effect.removed,[]);
+
+  const removed=execute(state,'kubectl delete pod atlas-r1-3');
+  assert.ok(removed.effect.removed.includes('Pod/default/atlas-r1-3'));
+  assert.ok(removed.effect.created.includes('Pod/default/atlas-r1-3-1'));
+  assert.equal(execute(state,'kubectl scale deployment/atlas --replicas=99').effect,undefined);
+});
+
+test('YAML apply reports created resources only after successful validation and commit',()=>{
+  const state=createCluster();
+  assert.equal(applyYaml(state,lessons.yaml.template,{validate:true}).effect,undefined);
+  assert.equal(applyYaml(state,lessons.yaml.template+'---\nkind: Invalid\n').effect,undefined);
+  assert.deepEqual(applyYaml(state,lessons.yaml.template).effect,
+    {type:'write',created:['ConfigMap/default/preferencias'],updated:[],removed:[]});
+});

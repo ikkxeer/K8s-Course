@@ -6,6 +6,8 @@ KubePath reúne 18 prácticas en seis niveles. Puedes desplegar un Pod, escalar 
 
 La aplicación estática vive en `dist/`. No necesita un paso de compilación.
 
+En Sandbox, prueba `kubectl get pods`. La topología y el explorador resaltan los Pods de la respuesta. Los filtros de namespace y etiquetas también se aplican al resaltado. Al escalar un Deployment, la escena muestra qué recursos aparecieron o cambiaron, y el resumen registra las eliminaciones.
+
 ```sh
 python3 -m http.server 4173 --directory dist
 ```
