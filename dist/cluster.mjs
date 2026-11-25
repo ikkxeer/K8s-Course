@@ -746,7 +746,7 @@ export function validateGoals(state,lesson) {
       case 'podImage':return ready(pod) && pod.spec.containers.some(container=>new RegExp('(^|/)'+goal.image+'(?=[:@]|$)').test(container.image));
       case 'endpoints':return !!svc?.status?.reachable?.length && svc.status.reachable.every(key=>state.resources[key]?.metadata?.labels?.app==='atlas') && svc.spec.ports.some(port=>(port.targetPort??port.port)===80 || (port.targetPort??port.port)==='http');
       case 'secretKey':return own(resourceBy(state,'Secret',goal.name)?.data,goal.key);
-      case 'route':return statusOf(route??{})==='Activo' && route.status.routes.some(entry=>entry.name===goal.backend && entry.host===goal.host && !!serviceRoute(state,entry,nsOf(route)));
+      case 'route':return !!route && statusOf(route)==='Activo' && route.status.routes.some(entry=>entry.name===goal.backend && entry.host===goal.host && !!serviceRoute(state,entry,nsOf(route)));
       case 'status':return resource?.status?.phase===goal.value;
       case 'leastPrivilege':return !!role && binding.subjects.some(subject=>subject.kind==='User' && subject.name==='observador') && !!role.rules.length && role.rules.every(rule=>rule.apiGroups.length===1 && rule.apiGroups[0]==='' && rule.resources.length===1 && rule.resources[0]==='pods' && rule.verbs.every(verb=>['get','list','watch'].includes(verb))) && ['get','list','watch'].every(verb=>role.rules.some(rule=>rule.verbs.includes(verb)));
       case 'denyIngress':return !!policy?.spec?.policyTypes?.includes('Ingress') && policy.spec.podSelector.matchLabels?.app==='atlas' && list(state,'Pod').some(item=>item.metadata.labels?.app==='atlas') && list(state,'Pod').filter(item=>item.metadata.labels?.app==='atlas').every(item=>!item.status.ingressAllowed);

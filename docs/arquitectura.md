@@ -4,7 +4,7 @@
 
 La primera entrega ejecuta los laboratorios como simulaciones deterministas en el navegador. Las prácticas comparten un modelo de recursos y un intérprete con operaciones explícitas. El intérprete no ejecuta un shell, no realiza solicitudes al laboratorio ni recibe credenciales de Kubernetes. La aplicación se entrega como sitio estático y se puede alojar en Sites o NGINX mediante Docker.
 
-La interfaz utiliza HTML semántico, CSS adaptable y módulos de JavaScript. La escena representa coordenadas 3D proyectadas en un Canvas 2D. Utiliza proyección ortográfica, rotación, traslación, zoom, orden de profundidad, selección y animación de rutas. El explorador HTML ofrece acceso alternativo a los recursos. El laboratorio y la escena se cargan al entrar a una práctica. El análisis YAML usa js-yaml con el esquema JSON y límites de tamaño y cantidad de objetos.
+La interfaz utiliza HTML semántico, CSS adaptable y módulos de JavaScript. La escena 3D usa WebGL con three.js (r170, servido desde `dist/assets/three` por la política de contenido): materiales físicos, sombras suaves, reflejos de entorno, bloom y un modelo propio por tipo de recurso. Un lienzo 2D superpuesto dibuja las etiquetas y recibe el ratón. Si el navegador no ofrece WebGL, la escena vuelve al render proyectado en Canvas 2D. La vista 2D es un diagrama de tarjetas en el mismo lienzo. El explorador HTML ofrece acceso alternativo a los recursos. El laboratorio y la escena se cargan al entrar a una práctica. El análisis YAML usa js-yaml con el esquema JSON y límites de tamaño y cantidad de objetos.
 
 ## Modelo de datos
 

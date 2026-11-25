@@ -36,3 +36,5 @@ La Academia incluye fundamentos, arquitectura, despliegue, administración, diag
 Los laboratorios se identifican como simulaciones. El intérprete admite un subconjunto de operaciones de `kubectl` y no inicia procesos del sistema. Los estados, el tráfico, las métricas y los eventos pertenecen al modelo didáctico. Los simulacros de certificación son material de práctica independiente.
 
 Las cuentas, la sincronización entre dispositivos y los clústeres reales aislados se describen como ampliaciones en el [documento de arquitectura](docs/arquitectura.md).
+
+La escena 3D usa [three.js](https://threejs.org) (licencia MIT, copia en `dist/assets/three/LICENSE`).

@@ -136,7 +136,8 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
   let state=createCluster(lesson.seed), editor=firstYaml, selected=null, inspect='status', current=builder?'builder':'terminal';
   let history=[], historyIndex=0, checks=[], feedback='', success=false, helper=false, hintCount=0, credited=false, celebrateLater=null;
   let operation=null, revealAffected=false;
-  const options={expert:lesson.id==='arquitectura',view:storedView(),namespace:'*',kind:'*',links:true,pan:false,hideErrors:lesson.category==='Incidencia'&&lesson.difficulty==='Avanzado'};
+  const ruleKinds={secretKey:['Secret'],leastPrivilege:['Role','RoleBinding'],denyIngress:['NetworkPolicy'],route:['Ingress']};
+  const options={show:new Set(lesson.objectives.flatMap(goal=>[goal.type,...(ruleKinds[goal.rule]??[])]).filter(Boolean)),expert:lesson.id==='arquitectura',view:storedView(),namespace:'*',kind:'*',links:true,pan:false,hideErrors:lesson.category==='Incidencia'&&lesson.difficulty==='Avanzado'};
   const route=modules.flatMap(module=>module.lessons);
   const next=route[route.indexOf(lesson.id)+1];
   const back=['sandbox','constructor'].includes(mode)?'resumen':mode;

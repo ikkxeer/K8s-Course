@@ -48,11 +48,11 @@ const alpha=(color,opacity)=>color+Math.round(clamp(opacity,0,1)*255).toString(1
 export const resourceColor=item=>kinds[item.kind]?.color??'#a79fff';
 export const resourceGlyph=item=>glyphNames[item.kind]??'?';
 
-export function visibleResources(state,{expert=false,namespace='*',kind='*',reveal=new Set()}={}) {
+export function visibleResources(state,{expert=false,namespace='*',kind='*',reveal=new Set(),show=new Set()}={}) {
   return list(state).filter(item=>{
     if (reveal.has(resourceKey(item))) return true;
     if (kind!=='*' && item.kind!==kind) return false;
-    if (!expert && kind==='*' && kinds[item.kind]?.expert) return false;
+    if (!expert && kind==='*' && kinds[item.kind]?.expert && !show.has(item.kind)) return false;
     if (namespace!=='*' && item.kind==='Namespace') return item.metadata.name===namespace;
     return namespace==='*' || !item.metadata.namespace || item.metadata.namespace===namespace;
   }).sort((a,b)=>order.indexOf(a.kind)-order.indexOf(b.kind) || a.metadata.name.localeCompare(b.metadata.name));
@@ -169,6 +169,14 @@ export function mountScene(canvas,{onSelect,onHover}) {
   let hitAreas=[], focusKeys=new Set(), highlightStart=0, hovered=null, drag=null, animation=true, inView=true;
   let yaw=-.35,pitch=.72,zoom=1,dx=0,dy=0;
   let view;
+  let gl=null;
+  const glActive=()=>!!gl&&options?.view!=='2d';
+  import('./gl.mjs').then(module=>{
+    if (signal.aborted) return;
+    gl=module.createGL(canvas,{sizeOf:kind=>kinds[kind]?.size??[.35,.35,.3],colorOf:resourceColor});
+    if (gl&&state) gl.sync({places:locations,decks,edges,items});
+    schedule();
+  }).catch(error=>console.warn('WebGL no disponible; se usa el render alternativo.',error));
   const resize=new ResizeObserver(()=>{
     const rect=canvas.getBoundingClientRect();
     w=Math.max(1,rect.width);h=Math.max(1,rect.height);
@@ -562,11 +570,56 @@ export function mountScene(canvas,{onSelect,onHover}) {
     ctx.restore();
     if(inView&&!document.hidden&&!motion.matches&&((animation&&options.links&&edges.some(edge=>edge.type==='tráfico'))||(focusKeys.size&&now-highlightStart<850))) schedule();
   }
+
+  function drawGL(now,theme,light) {
+    const info=new Map();
+    const shown=[...locations.values()].filter(place=>items.has(resourceKey(place.item)));
+    for (const record of shown) {
+      const item=record.item, key=resourceKey(item), phase=statusOf(item);
+      const focused=focusKeys.has(key), chosen=selected===key, pointed=hovered===key;
+      const fault=errorStatus(phase)&&(!options.hideErrors||focused||chosen||state.inspected.has(item.kind+'/'+item.metadata.name));
+      info.set(key,{focused,chosen,pointed,fault,tone:healthy.has(phase)?'ok':'wait'});
+    }
+    const moving=animation&&!motion.matches;
+    gl.frame({now,w,h,ratio:Math.min(2,window.devicePixelRatio||1),light,yaw,pitch,zoom,dx,dy,info,animation:moving,links:options.links,focusKind:operation?.effect.type,born});
+    hitAreas=[];
+    const occupied=[];
+    const entries=shown.map(record=>{const key=resourceKey(record.item);return {record,key,...info.get(key)};});
+    const rank=entry=>(entry.chosen||entry.pointed?6:0)+(entry.focused?4:0)+(entry.fault?3:0)+(entry.record.item.kind==='Pod'?2:0);
+    for (const entry of entries.sort((a,b)=>rank(b)-rank(a))) {
+      const active=entry.focused||entry.chosen||entry.pointed;
+      if (!active&&(entry.record.noLabel||entry.record.small||items.size>24&&rank(entry)<2)) continue;
+      const spot=gl.anchor(entry.key);
+      if (!spot) continue;
+      const accent=entry.fault?theme.warn:active?(operation?.effect.type==='write'?theme.write:theme.read):null;
+      const candidates=[[spot.bottom[0],spot.bottom[1]+5],[spot.top[0],spot.top[1]-25],[spot.bottom[0]-32,spot.bottom[1]+10],[spot.bottom[0]+32,spot.bottom[1]+10]];
+      const label=candidates.map(([x,y])=>pill(displayName(entry.record.item),x,y,theme,{accent,priority:active})).find(item=>!occupied.some(box=>overlap(box,item.box)));
+      if (!label) continue;
+      label.paint();occupied.push(label.box);
+      hitAreas.push({key:entry.key,box:label.box});
+    }
+    for (const deck of decks) {
+      const rear=deck.key==='control'||deck.key==='apps';
+      const [x,y]=gl.project([deck.x,.19,deck.z+(rear?0:deck.length)]);
+      const label=[y+(rear?-27:9),y+(rear?-50:32)].map(top=>pill(deck.label,x,top,theme,{accent:deck.color})).find(item=>!occupied.some(box=>overlap(box,item.box)));
+      if (!label) continue;
+      label.paint();occupied.push(label.box);
+      if (deck.caption&&w>510) {
+        const caption=pill(deck.caption,x,rear?label.box.y-19:label.box.y+21,theme,{secondary:true});
+        if(!occupied.some(box=>overlap(box,caption.box))) {caption.paint();occupied.push(caption.box);}
+      }
+    }
+    for (const [key,time] of born) if (now-time>650) born.delete(key);
+    const busy=(animation&&options.links&&edges.some(edge=>edge.type==='tráfico'))||(focusKeys.size&&now-highlightStart<2600)||born.size||[...info.values()].some(entry=>entry.fault);
+    if(inView&&!document.hidden&&!motion.matches&&busy) schedule();
+  }
   function draw(now) {
     frame=0;
     ctx.clearRect(0,0,w,h);
     if (!state||!decks.length) return;
     const light=document.documentElement.dataset.theme==='light', theme=colors[light?'light':'dark'];
+    if (gl) gl.canvas.style.display=glActive()?'':'none';
+    if (glActive()) {drawGL(now,theme,light);return;}
     if (options.view==='2d') {draw2D(now,theme,light);return;}
     fit();
     const orderedDecks=[...decks].sort((a,b)=>project([a.x,0,a.z+a.length/2])[2]-project([b.x,0,b.z+b.length/2])[2]);
@@ -612,9 +665,10 @@ export function mountScene(canvas,{onSelect,onHover}) {
 
   function hit(event) {
     const rect=canvas.getBoundingClientRect(), x=event.clientX-rect.left,y=event.clientY-rect.top;
-    return hitAreas.findLast(entry=>entry.box
+    const found=hitAreas.findLast(entry=>entry.box
       ?x>=entry.box.x-hitSlop&&x<=entry.box.x+entry.box.w+hitSlop&&y>=entry.box.y-hitSlop&&y<=entry.box.y+entry.box.h+hitSlop
       :entry.areas.some(points=>within([x,y],points)))?.key??null;
+    return found||!glActive()?found:gl.pick(x,y);
   }
   function hover(key) {
     if (hovered===key) return;
@@ -678,12 +732,13 @@ export function mountScene(canvas,{onSelect,onHover}) {
       if (knownKeys) for (const key of nextItems) if (!knownKeys.has(key)) born.set(key,performance.now());
       knownKeys=nextItems;
       items=nextItems;
-      const context=visibleResources(state,{expert:options.expert,reveal:items});
+      const context=visibleResources(state,{expert:options.expert,reveal:items,show:options.show});
       const {places,decks:shownDecks}=layout(context);
       locations=places;
       decks=shownDecks;
       edges=relationList(state).filter(edge=>items.has(edge.from)&&items.has(edge.to)&&locations.has(edge.from)&&locations.has(edge.to)&&
         !(edge.type==='gestión' && items.has(state.resources[edge.to]?.sim?.owner)));
+      gl?.sync({places:locations,decks,edges,items});
       if(operation!==op) highlightStart=performance.now();
       operation=op;
       focusKeys=op?.keys??new Set();
@@ -693,6 +748,6 @@ export function mountScene(canvas,{onSelect,onHover}) {
     },
     reset,zoomBy,
     setAnimation(value){animation=value;schedule();},
-    destroy(){controls.abort();resize.disconnect();observer.disconnect();cancelAnimationFrame(frame);}
+    destroy(){gl?.destroy();controls.abort();resize.disconnect();observer.disconnect();cancelAnimationFrame(frame);}
   };
 }
