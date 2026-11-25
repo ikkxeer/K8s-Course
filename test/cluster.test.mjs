@@ -158,3 +158,22 @@ test('bonus de XP sin pistas, conceptos y logros',async()=>{
   assert.equal(unlockAchievements(p,now).length,0);
   assert.equal(achievementStatus(p,now).find(a=>a.id==='sin-ayuda').value,1);
 });
+
+test('todas las prácticas tienen pistas progresivas y conceptos como lista',()=>{
+  for (const lesson of Object.values(lessons)) {
+    assert.ok(Array.isArray(lesson.skills),lesson.id);
+    if (lesson.xp) assert.ok(lesson.hints.length>=3,lesson.id+' necesita al menos 3 pistas');
+  }
+});
+
+test('las órdenes kubectl de las pistas se ejecutan en orden en el escenario de su práctica',()=>{
+  for (const lesson of Object.values(lessons).filter(item=>item.xp)) {
+    const state=createCluster(lesson.seed);
+    for (const hint of lesson.hints) {
+      for (const [,command] of hint.matchAll(/`(kubectl [^`<]+)`/g)) {
+        const result=execute(state,command);
+        assert.equal(result.ok,true,lesson.id+': '+command+' → '+result.text);
+      }
+    }
+  }
+});

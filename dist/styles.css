@@ -564,3 +564,74 @@ select{appearance:none;padding-right:28px;background-image:url("data:image/svg+x
 @media(max-width:510px){.stats-5,.ach-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.world-side{display:none}.quest-top{flex-direction:column;gap:3px}.world-reward{flex-wrap:wrap;margin-left:0}.quest{padding-left:14px}.quest-step{padding-left:26px}.quest-node{left:-14px}.ring{width:110px;height:110px}}
 @media(prefers-reduced-motion:reduce){.ring-fill,.quest-step.current .quest-node,.celebrate{animation:none}}
 .goal-hint{display:block;margin-top:3px;color:var(--amber);font-size:.76rem;font-weight:600}.goal-hint svg{vertical-align:-1px}
+
+/* ── Laboratorio más limpio ── */
+.head-controls{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+.scene-options{border-top:1px solid var(--line-soft);padding:0 12px}
+.scene-options>summary{display:flex;align-items:center;gap:6px;min-height:34px;cursor:pointer;color:var(--subtle);font-size:.8rem;font-weight:650;list-style:none}
+.scene-options>summary::-webkit-details-marker{display:none}
+.scene-options>summary:hover{color:var(--ink)}
+.scene-options[open]>summary{color:var(--ink)}
+.scene-options .scene-filters{padding:0 0 8px}
+.scene-checks{display:flex;flex-wrap:wrap;gap:6px 16px;padding:0 0 10px;font-size:.82rem;color:var(--muted)}
+.scene-checks label{display:inline-flex;align-items:center;gap:6px}
+.scene-legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:8px 12px;font-size:.76rem;color:var(--subtle)}
+.kind-key{display:flex;flex-wrap:wrap;gap:4px 12px;flex:1;min-width:0}
+.kind-key span{display:inline-flex;align-items:center;gap:5px;cursor:help}
+.kind-key i{width:9px;height:9px;border-radius:3px;display:inline-block}
+.scene-stage[data-view="2d"] canvas{height:clamp(360px,40vw,540px)}
+.fold{padding:0}
+.fold>summary{display:flex;align-items:center;gap:7px;padding:13px;cursor:pointer;font-weight:700;list-style:none}
+.fold>summary::-webkit-details-marker{display:none}
+.fold>summary span{flex:1}
+.fold>summary>svg:last-child{transition:transform .15s}
+.fold[open]>summary>svg:last-child{transform:rotate(180deg)}
+.fold>p,.fold>ul{margin-inline:13px}
+.fold>p{margin-top:0;margin-bottom:8px;color:var(--muted);font-size:.88rem}
+.fold>ul{margin-bottom:13px}
+.fold-label{font-size:.7rem;font-weight:700;color:var(--subtle)!important;text-transform:uppercase;letter-spacing:.06em;margin-bottom:0!important}
+.goal-count{font-size:.8rem;color:var(--subtle);margin:4px 0 0!important}
+.goal-count strong{color:var(--mint-ink)}
+#helper-content ol.hints{padding-left:20px}
+#helper-content ol.hints li{margin-bottom:8px;line-height:1.5}
+#helper-content code,.cmd{font-family:var(--code);font-size:.8rem;padding:1px 6px;border-radius:5px;background:var(--panel-3);color:var(--mint-ink);border:1px solid var(--line)}
+.cmd{cursor:pointer;text-align:left;display:inline;word-break:break-word}
+.cmd:hover{border-color:var(--mint);background:var(--mint-bg)}
+.hint-note{display:flex;gap:5px;align-items:center;margin-top:8px;font-size:.76rem;color:var(--subtle)}
+.lab-guide{margin-bottom:12px}
+/* disposición del laboratorio: escena a la izquierda, guía fija a la derecha */
+.lab-workspace{grid-template-columns:minmax(0,1fr) 320px;gap:14px}
+.lab-interaction{grid-template-columns:minmax(0,1fr)}
+.lab-tools{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr)}
+.lab-guide{order:2;grid-template-columns:minmax(0,1fr);position:sticky;top:12px;margin:0}
+@media(max-width:1150px){.lab-workspace{grid-template-columns:minmax(0,1fr)}.lab-guide{order:0;position:static;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr))}.lab-interaction{order:1}}
+@media(max-width:700px){.lab-tools{grid-template-columns:minmax(0,1fr)}}
+
+/* ── pantallas más limpias ── */
+.stats-4{grid-template-columns:repeat(4,minmax(0,1fr))!important}
+.stats-4 .stat-card p{font-size:1.45rem}
+summary.world-head{list-style:none;cursor:pointer;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--panel);margin-bottom:0}
+summary.world-head::-webkit-details-marker{display:none}
+summary.world-head>svg{color:var(--subtle);transition:transform .15s;flex:none}
+details.world[open]>summary.world-head>svg{transform:rotate(180deg)}
+details.world[open]>summary.world-head{margin-bottom:12px}
+summary.world-head:hover{border-color:var(--mint)}
+details.world.active>summary.world-head{border-color:color-mix(in srgb,var(--mint) 45%,var(--line))}
+.world-title p:last-child{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+.worlds{gap:12px}
+.quest-card.compact{display:flex;align-items:center;gap:10px;padding:9px 12px}
+.quest-card.compact>:first-child{flex:1;min-width:0}
+.quest-card.compact h3{font-size:.95rem}
+.quest-step.done .quest-card.compact h3{color:var(--muted);font-weight:600}
+.quest-sub{display:flex;align-items:center;gap:4px;color:var(--subtle);font-size:.76rem;margin-top:2px}
+.empty-note.small{padding:4px 0;font-size:.8rem}
+.more{margin-top:12px}
+.more>summary{cursor:pointer;color:var(--mint-ink);font-size:.84rem;font-weight:700;margin-bottom:10px}
+.more .achievements{margin-top:0}
+.dashboard-grid{grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)}
+.dashboard-grid>.mission-hero{margin-bottom:0;align-self:start}
+@media(max-width:925px){.stats-4{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+.heat{max-width:440px}
+.goals li{flex-wrap:wrap}
+.goal-hint{flex-basis:100%;padding-left:23px}
+@media(max-width:925px){.dashboard-grid{grid-template-columns:minmax(0,1fr)}}
