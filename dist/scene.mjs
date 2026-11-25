@@ -335,11 +335,135 @@ export function mountScene(canvas,{onSelect,onHover}) {
       ctx.fillText(label,box.x+(accent?13:6),box.y+height/2+.25);
     }};
   }
+
+  /* ───── Vista 2D: diagrama de tarjetas ───── */
+  const CARD={w:118,h:56,gap:10,pad:12,head:34,cols:2,colGap:18};
+  function layout2D() {
+    const {w:cw,h:ch,gap,pad,head,cols,colGap}=CARD;
+    const bandW=pad*2+cols*cw+(cols-1)*gap;
+    const byDeck=new Map(decks.map(deck=>[deck,[]]));
+    for (const record of locations.values()) {
+      if (!items.has(resourceKey(record.item))||record.item.kind==='Container'||record.noLabel) continue;
+      byDeck.get(record.deck)?.push(record);
+    }
+    const columns=[[],[]];
+    for (const deck of [...decks].sort((a,b)=>a.z-b.z)) columns[deck.x<0?0:1].push(deck);
+    const sides=columns.filter(column=>column.length).length||1;
+    const bands=[];
+    let y=0;
+    for (let row=0;row<Math.max(columns[0].length,columns[1].length);row++) {
+      const start=bands.length;
+      let rowHeight=0;
+      for (let side=0;side<2;side++) {
+        const deck=columns[side][row];
+        if (!deck) continue;
+        const cards=byDeck.get(deck);
+        const lines=Math.max(1,Math.ceil(cards.length/cols));
+        const height=head+(cards.length?lines*(ch+gap)-gap:20)+pad;
+        bands.push({deck,x:sides===1?0:side*(bandW+colGap),y,w:bandW,h:height,
+          cards:cards.map((record,i)=>({record,x:pad+(i%cols)*(cw+gap),y:head+Math.floor(i/cols)*(ch+gap)}))});
+        rowHeight=Math.max(rowHeight,height);
+      }
+      for (const band of bands.slice(start)) band.h=rowHeight;
+      y+=rowHeight+colGap;
+    }
+    return {bands,W:sides===1?bandW:bandW*2+colGap,H:Math.max(1,y-colGap)};
+  }
+  function trimText(text,max) {
+    let label=text;
+    while (ctx.measureText(label).width>max&&label.length>2) label=label.slice(0,-2)+'…';
+    return label;
+  }
+  const healthy=new Set(['Running','Ready','Activo','Active','Disponible','Bound','Operativo','Available']);
+  function draw2D(now,theme,light) {
+    const layout=layout2D();
+    const k=clamp(Math.min((w-20)/layout.W,(h-20)/layout.H),.35,1.25)*zoom;
+    const ox=(w-layout.W*k)/2+dx, oy=(h-layout.H*k)/2+dy;
+    const {w:cw,h:ch}=CARD;
+    const centers=new Map(), cardList=[];
+    hitAreas=[];
+    ctx.save();
+    ctx.translate(ox,oy);ctx.scale(k,k);
+    for (const band of layout.bands) {
+      const {deck}=band;
+      ctx.beginPath();ctx.roundRect(band.x,band.y,band.w,band.h,12);
+      ctx.fillStyle=alpha(theme.pad,light?.9:.75);ctx.fill();
+      ctx.strokeStyle=alpha(deck.color,light?.55:.38);ctx.lineWidth=1.2;ctx.stroke();
+      ctx.textBaseline='middle';ctx.textAlign='left';
+      ctx.fillStyle=deck.color;ctx.beginPath();ctx.arc(band.x+16,band.y+17,3.5,0,Math.PI*2);ctx.fill();
+      ctx.font=font(750,13);ctx.fillStyle=theme.text;
+      ctx.fillText(trimText(deck.label,band.w-100),band.x+26,band.y+17.5);
+      let caption=deck.caption||(band.cards.length?'':'Vacío');
+      ctx.font=font(750,13);
+      const free=band.w-26-ctx.measureText(deck.label).width-20;
+      ctx.font=font(600,11);
+      if (caption&&ctx.measureText(caption).width>free) caption=band.cards.length?'':'Vacío';
+      if (caption&&ctx.measureText(caption).width>free) caption='';
+      if (caption) {ctx.font=font(600,11);ctx.fillStyle=theme.muted;ctx.textAlign='right';ctx.fillText(caption,band.x+band.w-12,band.y+17.5);ctx.textAlign='left';}
+      if (state.resources[deck.key]) hitAreas.push({key:deck.key,box:{x:ox+band.x*k,y:oy+band.y*k,w:band.w*k,h:32*k}});
+      for (const card of band.cards) {
+        const key=resourceKey(card.record.item), x=band.x+card.x, y=band.y+card.y;
+        centers.set(key,{x:x+cw/2,y:y+ch/2});
+        cardList.push({record:card.record,key,x,y});
+      }
+    }
+    if (options.links) edges.forEach((edge,index)=>{
+      const a=centers.get(edge.from), b=centers.get(edge.to);
+      if (!a||!b) return;
+      const active=focusKeys.has(edge.from)||focusKeys.has(edge.to)||selected===edge.from||selected===edge.to||hovered===edge.from||hovered===edge.to;
+      const network=edge.type==='tráfico', blocked=edge.type==='bloqueado', structural=edge.type==='estructura';
+      if (structural&&!active) return;
+      const muted=blocked&&options.hideErrors&&!active;
+      const color=network?theme.net:blocked&&!muted?theme.warn:theme.link;
+      const control={x:(a.x+b.x)/2,y:(a.y+b.y)/2-Math.min(26,Math.hypot(b.x-a.x,b.y-a.y)*.12)};
+      ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.quadraticCurveTo(control.x,control.y,b.x,b.y);
+      ctx.strokeStyle=alpha(color,active?.97:network?.85:blocked&&!muted?.8:.42);ctx.lineWidth=network||active?2.2:1.3;
+      ctx.setLineDash(blocked?[5,5]:structural?[3,5]:[]);ctx.stroke();ctx.setLineDash([]);
+      if (network&&animation&&!motion.matches) {
+        const t=(now/2200+index*.21)%1, r=1-t;
+        dot(r*r*a.x+2*r*t*control.x+t*t*b.x,r*r*a.y+2*r*t*control.y+t*t*b.y,3.2,color);
+      }
+    });
+    const focusColor=operation?.effect.type==='write'?theme.write:theme.read;
+    for (const {record,key,x,y} of cardList) {
+      const {item}=record, phase=statusOf(item);
+      const focused=focusKeys.has(key), chosen=selected===key, pointed=hovered===key;
+      const fault=errorStatus(phase)&&(!options.hideErrors||focused||chosen||state.inspected.has(item.kind+'/'+item.metadata.name));
+      const color=fault?theme.warn:resourceColor(item);
+      ctx.save();
+      if (focusKeys.size&&!focused&&!chosen&&!pointed) ctx.globalAlpha=.8;
+      if (focused||chosen||pointed) {ctx.shadowColor=alpha(focusColor,.7);ctx.shadowBlur=10;}
+      ctx.beginPath();ctx.roundRect(x,y,cw,ch,9);
+      ctx.fillStyle=theme.label;ctx.fill();
+      ctx.shadowBlur=0;
+      ctx.strokeStyle=focused||chosen||pointed?focusColor:alpha(color,.7);ctx.lineWidth=focused||chosen?2.2:1.2;ctx.stroke();
+      ctx.beginPath();ctx.roundRect(x,y,5,ch,[9,0,0,9]);ctx.fillStyle=color;ctx.fill();
+      ctx.save();
+      ctx.translate(x+14,y+11);ctx.scale(.8,.8);
+      ctx.strokeStyle=color;ctx.lineWidth=1.9;ctx.lineCap='round';ctx.lineJoin='round';
+      ctx.stroke(paths[kinds[item.kind].icon]);
+      ctx.restore();
+      ctx.textAlign='left';ctx.textBaseline='middle';
+      ctx.font=font(700,9.5);ctx.fillStyle=theme.muted;
+      ctx.fillText(trimText(item.kind.replace(/([a-z])([A-Z])/g,'$1 $2').toUpperCase(),cw-52),x+37,y+14);
+      ctx.font=font(750,12.5);ctx.fillStyle=theme.text;
+      ctx.fillText(trimText(item.metadata.name,cw-22),x+14,y+34);
+      const ok=healthy.has(phase);
+      dot(x+17,y+47,3,fault?theme.warn:ok?theme.write:theme.muted);
+      ctx.font=font(650,10);ctx.fillStyle=fault?theme.warn:theme.muted;
+      ctx.fillText(trimText(phase,cw-36),x+25,y+47.5);
+      ctx.restore();
+      hitAreas.push({key,box:{x:ox+x*k,y:oy+y*k,w:cw*k,h:ch*k}});
+    }
+    ctx.restore();
+    if(inView&&!document.hidden&&!motion.matches&&((animation&&options.links&&edges.some(edge=>edge.type==='tráfico'))||(focusKeys.size&&now-highlightStart<850))) schedule();
+  }
   function draw(now) {
     frame=0;
     ctx.clearRect(0,0,w,h);
     if (!state||!decks.length) return;
     const light=document.documentElement.dataset.theme==='light', theme=colors[light?'light':'dark'];
+    if (options.view==='2d') {draw2D(now,theme,light);return;}
     fit();
     const orderedDecks=[...decks].sort((a,b)=>project([a.x,0,a.z+a.length/2])[2]-project([b.x,0,b.z+b.length/2])[2]);
     for(const deck of orderedDecks) drawDeck(deck,theme,light);
@@ -392,7 +516,7 @@ export function mountScene(canvas,{onSelect,onHover}) {
   canvas.addEventListener('pointerdown',event=>{
     if (event.button===1) return;
     canvas.setPointerCapture(event.pointerId);
-    drag={x:event.clientX,y:event.clientY,started:false,pan:event.shiftKey||event.button===2||options.pan};
+    drag={x:event.clientX,y:event.clientY,started:false,pan:event.shiftKey||event.button===2||options.pan||options.view==='2d'};
   },{signal});
   canvas.addEventListener('pointermove',event=>{
     if (!drag) {hover(hit(event));return;}
@@ -421,7 +545,7 @@ export function mountScene(canvas,{onSelect,onHover}) {
     event.preventDefault();
     if(key==='0'){reset();return;}
     if(['+','=','-'].includes(key)){zoomBy(key==='-'?1/1.15:1.15);return;}
-    if(options.pan||event.shiftKey) {
+    if(options.pan||event.shiftKey||options.view==='2d') {
       dx+=key==='ArrowLeft'?-16:key==='ArrowRight'?16:0;
       dy+=key==='ArrowUp'?-16:key==='ArrowDown'?16:0;
     } else {

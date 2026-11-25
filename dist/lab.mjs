@@ -1,5 +1,5 @@
 import {lessons,modules,modes,totalLessons} from './catalog.mjs';
-import {applyYaml,builderManifest,createCluster,errorStatus,eventsFor,execute,exportYaml,kinds,list,logsFor,markInspected,metricsFor,resourceKey,statusOf,validateGoals,yamlOf} from './cluster.mjs';
+import {applyYaml,builderManifest,createCluster,errorStatus,eventsFor,execute,exportYaml,kinds,list,logsFor,markInspected,metricsFor,resourceKey,statusOf,validateGoals,goalHint,yamlOf} from './cluster.mjs';
 import {mountScene,resourceColor,resourceGlyph,visibleResources} from './scene.mjs';
 import {recordSuccess,stats} from './progress.mjs';
 import {unlockAchievements} from './achievements.mjs';
@@ -13,6 +13,10 @@ const modeNames={academia:'Academia',...Object.fromEntries(modes.map(mode=>[mode
 const attributes={apiVersion:'apiVersion: v1',kind:'kind: Pod',metadata:'metadata:',name:'  name: demo',namespace:'  namespace: default',spec:'spec:',data:'data:',selector:'  selector:',replicas:'  replicas: 2',containers:'  containers:',image:'    image: nginx:1.27',ports:'  ports:'};
 const inspectorTabs=[['status','Estado'],['yaml','YAML'],['logs','Logs'],['events','Eventos'],['metrics','Métricas']];
 const toolButtons=[['zoom-in','Acercar','plus'],['zoom-out','Alejar','minus'],['pan','Desplazar cámara','move'],['camera','Restablecer cámara','rotate']];
+const storedView=()=>{try{return localStorage.getItem('kubepath.vista')==='2d'?'2d':'3d';}catch{return '3d';}};
+const saveView=value=>{try{localStorage.setItem('kubepath.vista',value);}catch{}};
+const kindInfo={Cluster:'El conjunto completo de máquinas',Node:'Una máquina del clúster',Namespace:'Carpeta para separar recursos',Component:'Pieza interna del Control Plane',Deployment:'Gestiona las réplicas de una app',ReplicaSet:'Mantiene el número de Pods',Pod:'Tu contenedor en ejecución',Container:'Proceso dentro de un Pod',Service:'Dirección estable hacia los Pods',Ingress:'Entrada HTTP desde fuera',ConfigMap:'Configuración',Secret:'Datos sensibles',PersistentVolume:'Disco disponible',PersistentVolumeClaim:'Petición de disco',Role:'Conjunto de permisos',RoleBinding:'Asigna permisos a un usuario',NetworkPolicy:'Regla de red'};
+const richHint=text=>e(text).replace(/`([^`]+)`/g,(match,code)=>/^kubectl /.test(code)?'<button type="button" class="cmd" data-lab="use-cmd" data-cmd="'+code+'" title="Pegar en la terminal">'+code+'</button>':'<code>'+code+'</code>');
 const hello='Clúster simulado iniciado. Escribe kubectl help para consultar los comandos disponibles.';
 const stageRead=()=>{try{return Number(sessionStorage.getItem(stageKey)??0);}catch{return 0;}};
 const stageSave=n=>{try{sessionStorage.setItem(stageKey,String(n));}catch{}};
@@ -30,6 +34,9 @@ function highlight(source) {
 }
 function coach(state,lesson,done,attempts) {
   if (done.length && done.every(Boolean)) return 'El estado cumple los objetivos. Valídalo para registrar el progreso.';
+  const pendingEndpoints=lesson.objectives.find((goal,i)=>!done[i]&&goal.rule==='endpoints');
+  const why=pendingEndpoints?goalHint(state,pendingEndpoints):'';
+  if (why) return why;
   if (lesson.category==='Incidencia') {
     if (!state.inspected.has('Pod') && !state.inspected.has('Service')) return '¿Hay Pods listos? ¿Qué destinos conoce el Service? Comprueba ambas partes de la ruta.';
     return list(state,'Pod').some(pod=>statusOf(pod)==='Running')
@@ -96,7 +103,7 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
   let state=createCluster(lesson.seed), editor=firstYaml, selected=null, inspect='status', current=builder?'builder':'terminal';
   let history=[], historyIndex=0, checks=[], feedback='', success=false, helper=false, hintCount=0, credited=false, celebrateLater=null;
   let operation=null, revealAffected=false;
-  const options={expert:builder||lesson.id==='arquitectura',namespace:'*',kind:'*',links:true,pan:false,hideErrors:lesson.category==='Incidencia'&&lesson.difficulty==='Avanzado'};
+  const options={expert:lesson.id==='arquitectura',view:storedView(),namespace:'*',kind:'*',links:true,pan:false,hideErrors:lesson.category==='Incidencia'&&lesson.difficulty==='Avanzado'};
   const route=modules.flatMap(module=>module.lessons);
   const next=route[route.indexOf(lesson.id)+1];
   const back=['sandbox','constructor'].includes(mode)?'resumen':mode;
@@ -108,27 +115,24 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
   }
 
   const guide='<aside class="lab-guide" aria-label="Guía de la práctica">'+
-    (cert||challenge?'':'<section class="panel lab-guide-card">'+title('Concepto',incident?'pulse':'book')+'<p>'+e(lesson.concept)+'</p></section>')+
-    (lesson.skills?.length&&!cert?'<section class="panel lab-guide-card">'+title('Lo que dominarás','spark')+'<ul class="chip-list">'+lesson.skills.map(name=>'<li class="chip '+(progress.completed[lesson.id]?'learned':'')+'">'+e(name)+'</li>').join('')+'</ul></section>':'')+
-    (lesson.objectives.length?'<section id="lab-goals" tabindex="-1" class="panel lab-guide-card goals" aria-label="Objetivos de la práctica">'+title('Objetivos','target')+'<ul id="goal-list"></ul>'+button('validate','Validar objetivos','check','primary')+'<div id="goal-feedback" aria-live="polite"></div></section>':'')+
-    (cert?'<p class="lab-note">Simulacro con pistas desactivadas.</p>':'<section class="panel lab-guide-card"><button class="helper-toggle" data-lab="coach" type="button" aria-expanded="false">'+icon('spark',19)+' <span>Asistente de práctica</span>'+icon('down',15)+'</button><div id="helper-content" hidden></div></section>')+'</aside>';
+    (lesson.objectives.length?'<section id="lab-goals" tabindex="-1" class="panel lab-guide-card goals" aria-label="Objetivos de la práctica">'+title('Objetivos','target')+'<p class="goal-count"><strong id="goal-total"></strong> cumplidos</p><ul id="goal-list"></ul>'+button('validate','Validar objetivos','check','primary')+'<div id="goal-feedback" aria-live="polite"></div></section>':'')+
+    (cert?'<p class="lab-note">Simulacro con pistas desactivadas.</p>':'<section class="panel lab-guide-card"><button class="helper-toggle" data-lab="coach" type="button" aria-expanded="false">'+icon('spark',19)+' <span>¿Atascado? Pide una pista</span>'+icon('down',15)+'</button><div id="helper-content" hidden></div></section>')+
+    (cert||challenge||!lesson.concept?'':'<details class="panel lab-guide-card fold"><summary>'+icon(incident?'pulse':'book',17)+' <span>Concepto</span>'+icon('down',15)+'</summary><p>'+e(lesson.concept)+'</p>'+(lesson.skills?.length?'<p class="fold-label">Lo que dominarás</p><ul class="chip-list">'+lesson.skills.map(name=>'<li class="chip '+(progress.completed[lesson.id]?'learned':'')+'">'+e(name)+'</li>').join('')+'</ul>':'')+'</details>')+'</aside>';
 
   root.innerHTML='<div class="lab-header"><div><a class="text-link" href="#'+back+'">'+modeNames[mode]+'</a><h1>'+e(lesson.title)+'</h1><p class="lab-intro">'+e(lesson.intro)+'</p><div class="lab-meta"><span class="simulation-pill"><i></i> Simulación</span>'+
     (mode==='academia'&&route.includes(lesson.id)?'<span class="tag mint">Práctica '+(route.indexOf(lesson.id)+1)+' de '+route.length+'</span>':'')+(lesson.minutes?'<span class="tag">'+e(lesson.difficulty)+'</span><span>'+icon('clock',15)+' '+lesson.minutes+' min</span><span class="xp">+'+lesson.xp+' XP</span>':'')+
     (survival?'<span class="tag amber">Etapa '+(stage+1)+' / '+phases.length+'</span>':'')+
-    (lesson.objectives.length?'<button type="button" class="lab-goal-link" data-lab="view-objectives" aria-controls="lab-goals">'+icon('target',15)+' <span>Objetivos</span> <strong id="goal-total"></strong></button>':'')+
-    '</div></div>'+button('reset','Reiniciar','rotate')+'</div>'+
-    '<div class="lab-workspace"><div class="lab-interaction"><section class="panel topology" aria-label="Topología 3D">'+
-    '<div class="topology-head">'+title('Topología 3D','cluster')+'<div class="segmented" aria-label="Detalle de la topología"><button data-lab="basic" type="button">Básico</button><button data-lab="expert" type="button">Experto</button></div></div>'+
-    '<div class="scene-filters">'+icon('filter',16)+'<select id="ns-filter" aria-label="Filtrar por namespace"></select><select id="kind-filter" aria-label="Filtrar por tipo"><option value="*">Todos los tipos</option>'+kinds.map(option).join('')+'</select></div>'+
+        '</div></div>'+button('reset','Reiniciar','rotate')+'</div>'+
+    '<div class="lab-workspace">'+guide+'<div class="lab-interaction"><section class="panel topology" aria-label="Topología 3D">'+
+    '<div class="topology-head">'+title('Vista del clúster','cluster')+'<div class="head-controls"><div class="segmented" aria-label="Tipo de vista"><button data-lab="view-3d" type="button">3D</button><button data-lab="view-2d" type="button">2D</button></div><div class="segmented" aria-label="Nivel de detalle"><button data-lab="basic" type="button" title="Solo lo esencial">Simple</button><button data-lab="expert" type="button" title="Incluye componentes internos">Detallado</button></div></div></div>'+
+    '<details class="scene-options"><summary>'+icon('filter',15)+' <span>Filtros y opciones</span></summary><div class="scene-filters"><select id="ns-filter" aria-label="Filtrar por namespace"></select><select id="kind-filter" aria-label="Filtrar por tipo"><option value="*">Todos los tipos</option>'+kinds.map(option).join('')+'</select></div><div class="scene-checks"><label><input type="checkbox" id="links-switch" checked> Mostrar relaciones</label><label><input type="checkbox" id="traffic-switch" checked> Animar tráfico</label></div></details>'+
     '<div class="scene-stage"><canvas tabindex="0" aria-label="Escena 3D del clúster. Flechas para rotar, más y menos para acercar y alejar, 0 para restablecer. Explora los recursos en la lista."></canvas>'+
     '<div class="scene-tools">'+toolButtons.map(([action,label,symbol])=>'<button type="button" class="icon-btn" data-lab="'+action+'" title="'+label+'" aria-label="'+label+'">'+icon(symbol,17)+'</button>').join('')+'</div>'+
     '<div id="scene-hover" class="scene-hover" hidden></div></div>'+
     '<div class="scene-status"><div id="scene-operation" role="status" aria-live="polite"></div><button type="button" id="reveal-affected" class="text-link" data-lab="show-affected" hidden>Mostrar afectados</button><button type="button" id="clear-affected" class="icon-btn" data-lab="clear-affected" aria-label="Quitar resaltado" title="Quitar resaltado" hidden>'+icon('close',15)+'</button></div>'+
-    '<div class="scene-legend"><label><input type="checkbox" id="links-switch" checked> Relaciones</label><label><input type="checkbox" id="traffic-switch" checked> Animar tráfico</label><span class="network-key"><i></i> Tráfico</span><span class="fault-key"><i></i> Incidencia</span><span id="scene-count"></span></div></section>'+
-    '<div class="lab-tools"><section class="panel console" aria-label="Herramientas del laboratorio"><div class="tabs">'+tab('terminal','Terminal',current==='terminal','terminal')+tab('yaml','YAML',false,'code')+(builder?tab('builder','Constructor',true,'layers'):'')+'</div>'+
+    '<div class="scene-legend"><span id="kind-key" class="kind-key"></span><span id="scene-count"></span></div>'+
     terminalTemplate()+yamlTemplate()+(builder?builderTemplate():'')+'</section>'+
-    '<section class="panel explorer" aria-label="Explorador de recursos"><div class="explorer-head">'+title('Explorador','layers')+'<button id="resource-back" class="text-link" type="button" data-lab="resources" hidden>Ver recursos</button></div><div id="explorer-content"></div></section></div></div>'+guide+'</div>'+
+    '<section class="panel explorer" aria-label="Explorador de recursos"><div class="explorer-head">'+title('Explorador','layers')+'<button id="resource-back" class="text-link" type="button" data-lab="resources" hidden>Ver recursos</button></div><div id="explorer-content"></div></section></div></div></div>'+
     '<dialog id="reset-dialog" class="dialog" aria-labelledby="reset-title"><h2 id="reset-title">Reiniciar laboratorio</h2><p>Se restaurarán los recursos iniciales y los cambios de esta sesión se perderán.</p><div class="reset-actions">'+button('cancel-reset','Cancelar')+button('confirm-reset','Reiniciar','rotate','primary small')+'</div></dialog>';
 
   const q=selector=>root.querySelector(selector);
@@ -159,7 +163,7 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
     clear.hidden=!operation;
     wrapper.dataset.effect=operation?.effect.type??'';
     if(!operation) {
-      bar.innerHTML=icon('info',16)+'<span>Arrastra para girar. Haz clic en un recurso para inspeccionarlo.</span>';
+      bar.innerHTML=icon('info',16)+'<span>'+(options.view==='2d'?'Arrastra para mover la vista.':'Arrastra para girar.')+' Haz clic en un recurso para inspeccionarlo.</span>';
       bar.removeAttribute('title');
       reveal.hidden=true;
       return;
@@ -239,7 +243,7 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
     checks=validateGoals(state,lesson);
     if(!checks.length) return;
     q('#goal-total').textContent=checks.filter(Boolean).length+' / '+checks.length;
-    q('#goal-list').innerHTML=lesson.objectives.map((goal,i)=>'<li class="'+(checks[i]?'met':'')+'">'+icon(checks[i]?'check':'circle',16)+'<span class="visually-hidden">'+(checks[i]?'Cumplido: ':'Pendiente: ')+'</span>'+e(goal.text)+'</li>').join('');
+    q('#goal-list').innerHTML=lesson.objectives.map((goal,i)=>'<li class="'+(checks[i]?'met':'')+'">'+icon(checks[i]?'check':'circle',16)+'<span class="visually-hidden">'+(checks[i]?'Cumplido: ':'Pendiente: ')+'</span>'+e(goal.text)+(!checks[i]&&goalHint(state,goal)?'<small class="goal-hint">'+icon('bulb',12)+' '+e(goalHint(state,goal))+'</small>':'')+'</li>').join('');
     let link='';
     if (success&&mode==='academia'&&next) link='<a class="btn secondary small" href="'+lessonUrl(next)+'">Siguiente práctica</a>';
     if (success&&survival) link=stage===phases.length-1?'<a class="btn secondary small" href="#progreso">Ver progreso</a>':'<a class="btn primary small" href="'+lessonUrl(phases[stage+1],mode)+'">Siguiente incidencia</a>';
@@ -252,8 +256,9 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
     q('[data-lab="coach"]').setAttribute('aria-expanded',String(helper));
     if (!helper) return;
     node.innerHTML='<p>'+e(coach(state,lesson,checks,attempts))+'</p>'+
-      (hintCount?'<ol>'+lesson.hints.slice(0,hintCount).map(hint=>'<li>'+e(hint)+'</li>').join('')+'</ol>':'')+
-      (hintCount<lesson.hints.length?button('hint',hintCount?'Siguiente pista':'Mostrar pista','bulb'):'')+
+      (hintCount?'<ol class="hints">'+lesson.hints.slice(0,hintCount).map(hint=>'<li>'+richHint(hint)+'</li>').join('')+'</ol>':'')+
+      (hintCount<lesson.hints.length?button('hint',hintCount?'Otra pista ('+hintCount+'/'+lesson.hints.length+')':'Mostrar pista','bulb'):'<p class="hint-note">Ya tienes todas las pistas. Prueba a ejecutar el último comando.</p>')+
+      (lesson.xp?'<p class="hint-note">'+icon('info',13)+' Usar pistas no resta XP: solo pierdes el bonus de +25 %.</p>':'')+
       (attempts>2&&lesson.id!=='yaml'?'<a class="text-link" href="'+lessonUrl('yaml')+'">Repasar YAML</a>':'');
   }
   function refresh() {
@@ -263,7 +268,7 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
     if(ns.innerHTML!==nsHtml) ns.innerHTML=nsHtml;
     ns.value=options.namespace;
     q('#kind-filter').value=options.kind;
-    for(const [selector,pressed] of [['basic',!options.expert],['expert',options.expert],['pan',options.pan]]) q('[data-lab="'+selector+'"]').setAttribute('aria-pressed',String(pressed));
+    for(const [selector,pressed] of [['basic',!options.expert],['expert',options.expert],['pan',options.pan],['view-3d',options.view!=='2d'],['view-2d',options.view==='2d']]) q('[data-lab="'+selector+'"]').setAttribute('aria-pressed',String(pressed));
     if(builder) {
       const node=q('#builder-namespace'), previous=node.value||state.activeNs;
       node.innerHTML=namespaces.map(option).join('');
@@ -277,7 +282,9 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
       return item && (revealAffected || operation.effect.type!=='write'&&scope(item));
     }));
     const visible=visibleResources(state,options);
+    q('#kind-key').innerHTML=[...new Set(visible.map(item=>item.kind))].map(kind=>'<span title="'+e(kindInfo[kind]??'')+'"><i style="background:'+resourceColor({kind})+'"></i>'+e(kind)+'</span>').join('');
     q('#scene-count').textContent=visible.length+' '+(visible.length===1?'recurso':'recursos');
+    q('.scene-stage').dataset.view=options.view;
     scene.update(state,options,selected,operation);
     drawOperation(visible);
     drawExplorer(visible);
@@ -380,6 +387,8 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
     if(action==='resources') {selected=null;refresh();q('[data-resource]')?.focus({preventScroll:true});}
     if(action==='basic'||action==='expert') {options.expert=action==='expert';revealAffected=false;refresh();}
     if(action==='pan') {options.pan=!options.pan;refresh();}
+    if(action==='view-3d'||action==='view-2d') {options.view=action==='view-2d'?'2d':'3d';saveView(options.view);scene.reset();refresh();}
+    if(action==='use-cmd') {current='terminal';drawTools();command.value=target.closest('[data-cmd]').dataset.cmd;command.focus();}
     if(action==='show-affected') {revealAffected=true;refresh();q('canvas').focus({preventScroll:true});}
     if(action==='clear-affected') {setOperation(null,'');refresh();q('canvas').focus({preventScroll:true});}
     if(action==='view-focus') {

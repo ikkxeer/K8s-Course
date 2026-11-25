@@ -1,7 +1,7 @@
 import {lessons, modules, modes, totalLessons} from './catalog.mjs';
 import {browserStorage, readProgress, saveProgress, stats} from './progress.mjs';
 import {e,icon,iconButton,lessonUrl,formatNumber} from './ui.mjs';
-import {academyView,progressView} from './journey.mjs';
+import {academyView,progressView,missionHero} from './journey.mjs';
 
 const app=document.querySelector('#app');
 const storage=browserStorage();
@@ -86,9 +86,6 @@ function stat(symbol,color,text,value,suffix) {
 function overview() {
   const s=stats(progress);
   const next=lessons[firstLesson()];
-  const upcoming=modules.find(module=>progressOf(module)<module.lessons.length)??modules[0];
-  const start=progressOf(upcoming)===upcoming.lessons.length?0:modules.indexOf(upcoming);
-  const shown=modules.slice(Math.min(start,modules.length-2),Math.min(start,modules.length-2)+2);
   return `
     <section class="hero" aria-labelledby="hero-title">
       <div class="hero-art" aria-hidden="true"><img src="./assets/cluster-hero.webp" alt="" fetchpriority="high"></div>
@@ -96,20 +93,10 @@ function overview() {
         <p class="hero-kicker">${icon('box',15)} <span>APRENDIZAJE PRÁCTICO</span></p>
         <h1 id="hero-title">Domina Kubernetes,<br><em>un clúster a la vez.</em></h1>
         <p class="hero-copy">Aprende a desplegar, operar y diagnosticar Kubernetes con laboratorios interactivos y topologías 3D.</p>
-        <div class="hero-actions"><a class="btn primary" href="${lessonUrl(next.id)}">${icon('play',16)} ${s.finished.length?'Continuar aprendiendo':'Empezar a aprender'}</a><a class="btn hero-secondary" href="#academia">${icon('route',17)} Ver la ruta</a></div>
       </div>
     </section>
-    <div class="stats-grid" aria-label="Tus estadísticas">
-      ${stat('bolt','violet','Experiencia',formatNumber(s.xp),'XP')}
-      ${stat('flame','amber','Racha actual',s.streak,s.streak===1?'día':'días')}
-      ${stat('terminal','mint','Prácticas completadas',s.finished.length,'/ '+totalLessons)}
-      ${stat('target','blue','Dominio de la ruta',s.pct,'%')}
-    </div>
     <div class="dashboard-grid">
-      <section class="path-preview">
-        <div class="section-head"><div><h2>Ruta de aprendizaje</h2><p>De tus primeros comandos a operar un clúster.</p></div><a href="#academia" class="text-link">Ver mapa</a></div>
-        <div class="timeline timeline-compact">${shown.map(module=>moduleCard(module, {compact:true})).join('')}</div>
-      </section>
+      ${missionHero(progress)}
       <aside class="dashboard-aside" aria-label="Resumen de actividad">
         <section class="panel rank-card">
           <div class="daily-top"><span class="icon-tile mint">${icon('shield',20)}</span><div><h2>${e(s.rank)}</h2><p>${s.goal?formatNumber(s.goal-s.xp)+' XP para '+e(s.nextRank):'Rango máximo'}</p></div></div>
