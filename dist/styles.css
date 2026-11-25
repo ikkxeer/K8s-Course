@@ -635,3 +635,56 @@ details.world.active>summary.world-head{border-color:color-mix(in srgb,var(--min
 .goals li{flex-wrap:wrap}
 .goal-hint{flex-basis:100%;padding-left:23px}
 @media(max-width:925px){.dashboard-grid{grid-template-columns:minmax(0,1fr)}}
+
+/* ── Terminal: ventana realista, siempre oscura ── */
+.term{--t-bg:#070c15;--t-bar:#0f1624;--t-line:#1a2438;--t-ink:#d9e3f7;--t-dim:#6f7f9c;--t-green:#6ff2c0;--t-cyan:#7cc8ff;--t-amber:#ffc67a;--t-red:#ff8f9d;--t-violet:#b9a8ff;
+  background:var(--t-bg);color:var(--t-ink);border-radius:0 0 var(--radius) var(--radius);overflow:hidden}
+.term-bar{display:flex;align-items:center;gap:10px;min-height:36px;padding:0 10px;background:var(--t-bar);border-bottom:1px solid var(--t-line)}
+.term-dots{display:flex;gap:6px;flex:none}
+.term-dots i{width:10px;height:10px;border-radius:50%;background:#ff6b6b}
+.term-dots i:nth-child(2){background:#ffcb4d}
+.term-dots i:nth-child(3){background:#4be3a5}
+.term-title{display:inline-flex;align-items:center;gap:6px;color:var(--t-dim);font:600 .75rem var(--code);min-width:0;white-space:nowrap}
+.term-title small{font:inherit;opacity:.7}
+.term-title b{color:var(--t-green);font-weight:700}
+.term-actions{margin-left:auto;display:flex;gap:4px}
+.term-btn{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border:1px solid var(--t-line);border-radius:6px;background:transparent;color:var(--t-dim);font:600 .72rem var(--body)}
+.term-btn:hover{color:var(--t-green);border-color:color-mix(in srgb,var(--t-green) 50%,var(--t-line))}
+.term .terminal-body{height:clamp(220px,30vh,340px);padding:12px 14px;background:var(--t-bg);font-size:.82rem;scrollbar-width:thin;scrollbar-color:#27344d transparent;resize:vertical}
+.term .terminal-body pre{margin:0 0 6px;font:.82rem/1.6 var(--code);color:var(--t-ink);animation:t-in .18s ease-out}
+@keyframes t-in{from{opacity:0;transform:translateY(3px)}}
+.term .terminal-body .notice{color:var(--t-dim);margin-bottom:10px}
+.term .terminal-body .entered{margin-top:12px;margin-bottom:3px;color:var(--t-ink)}
+.term .terminal-body .entered:first-child{margin-top:0}
+.t-ns{color:var(--t-cyan);font-weight:700}
+.t-arrow{color:var(--t-green);margin:0 6px 0 7px;font-weight:700}
+.tk-bin{color:var(--t-green);font-weight:700}
+.tk-verb{color:var(--t-cyan);font-weight:700}
+.tk-flag{color:var(--t-amber)}
+.tk-ph{color:var(--t-dim);font-style:italic}
+.t-ok{color:var(--t-green)}
+.t-wait{color:var(--t-amber)}
+.t-bad,.t-x{color:var(--t-red);font-weight:700}
+.t-head{color:var(--t-dim);font-weight:700;letter-spacing:.03em}
+.t-dim{color:var(--t-dim)}
+.term .terminal-body .warn{color:var(--t-red)}
+.term .syn-key{color:var(--t-cyan)}
+.term .syn-value{color:var(--t-ink)}
+.term .syn-comment{color:var(--t-dim)}
+.term-suggest{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:7px 12px;border-top:1px solid var(--t-line);background:#0a111d;font-size:.74rem;color:var(--t-dim)}
+.term-suggest .sg{padding:2px 9px;border:1px solid var(--t-line);border-radius:99px;background:#101a2b;color:var(--t-ink);font:.74rem var(--code);cursor:pointer}
+.term-suggest .sg:hover{border-color:var(--t-green);background:#12261f}
+.term .prompt{display:flex;align-items:center;gap:8px;padding:6px 8px 6px 12px;background:#0b1320;border-top:1px solid var(--t-line);font:600 .84rem var(--code);transition:box-shadow .15s,border-color .15s}
+.term .prompt:focus-within{border-top-color:var(--t-green);box-shadow:inset 0 1px 0 0 color-mix(in srgb,var(--t-green) 55%,transparent)}
+.term .prompt-name{display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+.term .prompt-name b{color:var(--t-violet)}
+.term .prompt-name i{color:var(--t-cyan);font-style:normal;padding:1px 7px;border-radius:5px;background:#12233a}
+.term .prompt-name span{color:var(--t-green)}
+.term .prompt input{flex:1;min-width:0;background:transparent;border:0;padding:8px 2px;color:var(--t-ink);caret-color:var(--t-green);font:inherit;font-weight:500;outline:0}
+.term .prompt input::placeholder{color:#44526d;font-weight:400}
+.term .term-send{width:30px;height:30px;color:var(--t-green);border-color:var(--t-line);background:transparent}
+.term .term-send:hover{background:#12261f;border-color:var(--t-green)}
+.console{overflow:hidden}
+@media(max-width:700px){.term-btn:not(#terminal-focus){padding:3px 6px}.term .prompt-name b{display:none}}
+.lab-tools{grid-template-columns:minmax(0,1.7fr) minmax(0,1fr)}
+@media(max-width:1500px){.term-btn span{display:none}.term-btn{padding:4px 7px}}

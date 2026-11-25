@@ -695,6 +695,12 @@ export function execute(state,input,editor='') {
     const {args,flag}=readFlags(tokens);
     const verb=args.shift();
     if (!verb || verb==='help' || flag('--help')) return {ok:true,text:help};
+    const known=['get','describe','logs','top','events','run','create','expose','scale','set','rollout','label','patch','apply','delete','config'];
+    if (!known.includes(verb)) {
+      const close=known.find(item=>item.startsWith(verb));
+      fail('Comando desconocido: kubectl '+verb+'.'+(close?' ¿Quisiste decir kubectl '+close+'?':'')+' Escribe kubectl help para ver los disponibles.');
+    }
+    if (verb==='rollout' && !['status','history','undo'].includes(args[0])) fail('Usa kubectl rollout status, history o undo seguido de deployment/<nombre>.');
     const ns=flag('-n','--namespace')??state.activeNs;
     pick(state,'Namespace',ns,'');
     const focus=[];

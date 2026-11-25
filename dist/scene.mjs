@@ -165,13 +165,14 @@ export function mountScene(canvas,{onSelect,onHover}) {
   const controls=new AbortController(), signal=controls.signal;
   const motion=matchMedia('(prefers-reduced-motion: reduce)');
   let state,options,selected,operation,items=new Set(),edges=[],locations=new Map(),decks=[],frame=0,w=1,h=1;
+  let born=new Map(), knownKeys=null;
   let hitAreas=[], focusKeys=new Set(), highlightStart=0, hovered=null, drag=null, animation=true, inView=true;
   let yaw=-.35,pitch=.72,zoom=1,dx=0,dy=0;
   let view;
   const resize=new ResizeObserver(()=>{
     const rect=canvas.getBoundingClientRect();
     w=Math.max(1,rect.width);h=Math.max(1,rect.height);
-    const ratio=Math.min(2,window.devicePixelRatio||1);
+    const ratio=Math.min(3,Math.max(2,window.devicePixelRatio||1));
     canvas.width=Math.round(w*ratio);canvas.height=Math.round(h*ratio);
     ctx.setTransform(ratio,0,0,ratio,0,0);
     schedule();
@@ -216,41 +217,94 @@ export function mountScene(canvas,{onSelect,onHover}) {
   function dot(x,y,size,color) {
     ctx.beginPath();ctx.arc(x,y,size,0,2*Math.PI);ctx.fillStyle=color;ctx.fill();
   }
-  function stack(rings,faceColors,edge) {
+  /* ───── Render 3D de mayor calidad: iluminación, formas por recurso, sombras ───── */
+  const LIGHT=(()=>{const x=-.5,z=.85,l=Math.hypot(x,z);return [x/l,z/l];})();
+  const rgb=color=>{const n=parseInt(color.slice(1,7),16);return [n>>16&255,n>>8&255,n&255];};
+  function tint(color,amount,dark=[8,14,26]) {
+    const [r,g,b]=rgb(color), target=amount<0?dark:[255,255,255], t=Math.min(1,Math.abs(amount));
+    return 'rgb('+[r,g,b].map((v,i)=>Math.round(v+(target[i]-v)*t)).join(',')+')';
+  }
+  const ease=t=>1-Math.pow(1-t,3);
+  const forms={
+    Cluster:{sides:10},Node:{box:true,cut:.09,rack:true},Pod:{sides:18},Service:{sides:6},
+    Deployment:{sides:8,layers:true},ReplicaSet:{sides:8,layers:true},Ingress:{box:true,cut:.16,door:true},
+    Namespace:{box:true,cut:.22},Container:{sides:12},PersistentVolume:{sides:18},PersistentVolumeClaim:{sides:18},
+    Component:{box:true,cut:.1,rack:true},Secret:{box:true,cut:.12},ConfigMap:{box:true,cut:.12},
+    default:{box:true,cut:.16}
+  };
+  function ringPoints(form,x,y,z,a,c,inset=0) {
+    const rx=Math.max(.02,a-inset), rz=Math.max(.02,c-inset);
+    if (form.sides) return Array.from({length:form.sides},(_,i)=>{const angle=(i/form.sides)*Math.PI*2+Math.PI/form.sides;return [x+rx*Math.cos(angle),y,z+rz*Math.sin(angle)];});
+    return footprint(x,y,z,rx,rx,rz,rz,Math.max(.018,(form.cut??.16)*Math.min(rx,rz)*2));
+  }
+  function prism(rings,base,light,{decor}={}) {
     const projected=rings.map(ring=>ring.map(project));
+    const ring0=rings[0], cx=ring0.reduce((sum,p)=>sum+p[0],0)/ring0.length, cz=ring0.reduce((sum,p)=>sum+p[2],0)/ring0.length;
     const faces=[];
-    for (let tier=1;tier<projected.length;tier++) {
-      const lower=projected[tier-1],upper=projected[tier];
-      for(let i=0;i<upper.length;i++) {
-        const j=(i+1)%upper.length;
-        const points=[lower[i],lower[j],upper[j],upper[i]];
-        faces.push({points,fill:faceColors(tier,i),depth:points.reduce((sum,p)=>sum+p[2],0)/4});
+    for (let tier=1;tier<rings.length;tier++) {
+      const lower=projected[tier-1], upper=projected[tier], raw=rings[tier];
+      for (let i=0;i<raw.length;i++) {
+        const j=(i+1)%raw.length;
+        let nx=raw[j][2]-raw[i][2], nz=-(raw[j][0]-raw[i][0]);
+        const length=Math.hypot(nx,nz)||1;nx/=length;nz/=length;
+        if (nx*((raw[i][0]+raw[j][0])/2-cx)+nz*((raw[i][2]+raw[j][2])/2-cz)<0) {nx=-nx;nz=-nz;}
+        const diffuse=Math.max(0,nx*LIGHT[0]+nz*LIGHT[1]);
+        const amount=(light?-.26+diffuse*.46:-.44+diffuse*.66)+(tier===rings.length-1&&rings.length>2?.07:0);
+        faces.push({points:[lower[i],lower[j],upper[j],upper[i]],i,j,lower,upper,
+          top:tint(base,amount+.11,light?[20,32,56]:undefined),bottom:tint(base,amount-.13,light?[20,32,56]:undefined),
+          depth:(lower[i][2]+lower[j][2]+upper[j][2]+upper[i][2])/4});
       }
     }
     faces.sort((a,b)=>a.depth-b.depth);
-    for(const face of faces) polygon(face.points,face.fill,edge);
-    return {cap:projected.at(-1),foot:projected[0],faces};
+    for (const face of faces) {
+      const [p,q,r,s]=face.points;
+      const gradient=ctx.createLinearGradient((r[0]+s[0])/2,(r[1]+s[1])/2,(p[0]+q[0])/2,(p[1]+q[1])/2);
+      gradient.addColorStop(0,face.top);gradient.addColorStop(1,face.bottom);
+      polygon(face.points,gradient,light?'rgba(20,38,67,.22)':'rgba(255,255,255,.07)',.8);
+    }
+    const front=faces.at(-1);
+    if (decor&&front) decor(front);
+    return {cap:projected.at(-1),faces,front};
   }
+  const lerp=(a,b,t)=>[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t];
   function drawDeck(deck,theme,light) {
     const {x,z,halfWidth:a,length:b,color}=deck;
     const cut=.14;
     const ring=(y,inset=0)=>footprint(x,y,z,a-inset,a-inset,-inset,b-inset,cut);
     ctx.save();
-    ctx.shadowColor=alpha(theme.shadow,light?.20:.60);ctx.shadowBlur=12;ctx.shadowOffsetY=5;
+    ctx.shadowColor=alpha(theme.shadow,light?.26:.70);ctx.shadowBlur=22;ctx.shadowOffsetY=9;
     polygon(ring(-.10).map(project),theme.bottom);
     ctx.restore();
-    const {cap}=stack([ring(-.11),ring(.02)],()=>theme.bottom,theme.edge);
+    const {cap,faces}=prism([ring(-.14),ring(.02)],light?'#9db3d4':'#223250',light);
     const [first,,,,last]=cap;
     const gradient=ctx.createLinearGradient(first[0],first[1],last[0],last[1]);
     gradient.addColorStop(0,theme.pad);gradient.addColorStop(1,theme.stage);
-    polygon(cap,gradient,theme.edge);
-    polygon(ring(.025,.11).map(project),null,alpha(color,light?.34:.26));
+    polygon(cap,gradient,null);
+    ctx.save();
+    ctx.beginPath();cap.forEach(([px,py],i)=>i?ctx.lineTo(px,py):ctx.moveTo(px,py));ctx.closePath();ctx.clip();
+    const grid=alpha(light?theme.edge:'#6f8bbd',light?.34:.13);
+    for (let gx=x-a+.6;gx<x+a-.1;gx+=.6) stroke([project([gx,.025,z+.1]),project([gx,.025,z+b-.1])],grid,1);
+    for (let gz=z+.6;gz<z+b-.1;gz+=.6) stroke([project([x-a+.1,.025,gz]),project([x+a-.1,.025,gz])],grid,1);
+    ctx.restore();
+    ctx.save();
+    ctx.shadowColor=alpha(color,light?0:.55);ctx.shadowBlur=light?0:10;
+    polygon(cap,null,alpha(color,light?.75:.62),1.4);
+    ctx.restore();
+    polygon(ring(.027,.11).map(project),null,alpha(color,light?.34:.22));
   }
   function edgePath(from,to,type) {
     const a=project([from.x,from.y+.10,from.z]), b=project([to.x,to.y+.10,to.z]);
-    const raise=type==='tráfico'||type==='bloqueado'?Math.min(40,7+Math.hypot(b[0]-a[0],b[1]-a[1])*.10):7;
+    const raise=type==='tráfico'||type==='bloqueado'?Math.min(46,8+Math.hypot(b[0]-a[0],b[1]-a[1])*.12):7;
     const control=[(a[0]+b[0])/2,(a[1]+b[1])/2-raise];
     return {a,b,control};
+  }
+  function arrow(tip,from,color,size=6.5) {
+    const angle=Math.atan2(tip[1]-from[1],tip[0]-from[0]);
+    ctx.beginPath();
+    ctx.moveTo(tip[0],tip[1]);
+    ctx.lineTo(tip[0]-size*Math.cos(angle-.42),tip[1]-size*Math.sin(angle-.42));
+    ctx.lineTo(tip[0]-size*Math.cos(angle+.42),tip[1]-size*Math.sin(angle+.42));
+    ctx.closePath();ctx.fillStyle=color;ctx.fill();
   }
   function drawEdge(edge,index,now,theme) {
     const from=locations.get(edge.from),to=locations.get(edge.to);
@@ -259,16 +313,33 @@ export function mountScene(canvas,{onSelect,onHover}) {
     if (structural && !active) return;
     const muted=blocked&&options.hideErrors&&!active;
     const color=network?theme.net:blocked&&!muted?theme.warn:theme.link;
-    const opacity=active?.97:network?.80:blocked&&!muted?.76:.34;
+    const opacity=active?.97:network?.85:blocked&&!muted?.8:.38;
     const {a,b,control}=edgePath(from,to,edge.type);
-    ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.quadraticCurveTo(control[0],control[1],b[0],b[1]);
-    ctx.strokeStyle=alpha(color,opacity);ctx.lineWidth=network||active?1.8:1;
-    ctx.setLineDash(blocked?[4,5]:structural?[3,5]:[]);ctx.stroke();ctx.setLineDash([]);
-    if (network&&animation&&!motion.matches) {
-      const t=(now/2200+index*.21)%1, r=1-t;
-      const x=r*r*a[0]+2*r*t*control[0]+t*t*b[0],y=r*r*a[1]+2*r*t*control[1]+t*t*b[1];
-      dot(x,y,5,alpha(color,.21));dot(x,y,2.8,color);
+    if (network||active) {
+      ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.quadraticCurveTo(control[0],control[1],b[0],b[1]);
+      ctx.strokeStyle=alpha(color,.14);ctx.lineWidth=6;ctx.lineCap='round';ctx.stroke();
     }
+    ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.quadraticCurveTo(control[0],control[1],b[0],b[1]);
+    ctx.strokeStyle=alpha(color,opacity);ctx.lineWidth=network||active?2:1.1;
+    ctx.setLineDash(blocked?[4,5]:structural?[3,5]:[]);ctx.stroke();ctx.setLineDash([]);
+    if (network||blocked) arrow(b,control,alpha(color,opacity));
+    if (network&&animation&&!motion.matches) {
+      for (let k=0;k<4;k++) {
+        const t=((now/2200+index*.21)-k*.032+1)%1, r=1-t;
+        const x=r*r*a[0]+2*r*t*control[0]+t*t*b[0],y=r*r*a[1]+2*r*t*control[1]+t*t*b[1];
+        if (!k) dot(x,y,6,alpha(color,.2));
+        dot(x,y,k?2.2-k*.4:3,alpha(color,1-k*.25));
+      }
+    }
+  }
+  function contactShadow(x,z,a,c,theme,light) {
+    const [sx,sy]=project([x,.012,z]), radius=Math.max(a,c)*view.scale*1.7;
+    ctx.save();
+    ctx.translate(sx,sy);ctx.scale(1,Math.max(.25,view.sinPitch*.92));
+    const gradient=ctx.createRadialGradient(0,0,radius*.12,0,0,radius);
+    gradient.addColorStop(0,alpha(theme.shadow,light?.42:.85));gradient.addColorStop(.55,alpha(theme.shadow,light?.16:.38));gradient.addColorStop(1,alpha(theme.shadow,0));
+    ctx.fillStyle=gradient;ctx.beginPath();ctx.arc(0,0,radius,0,Math.PI*2);ctx.fill();
+    ctx.restore();
   }
   function drawObject(record,theme,light,now) {
     const {item,x,y,z,small}=record;
@@ -276,47 +347,78 @@ export function mountScene(canvas,{onSelect,onHover}) {
     const fault=errorStatus(statusOf(item)) && (!options.hideErrors||focused||chosen||state.inspected.has(item.kind+'/'+item.metadata.name));
     const color=fault?theme.warn:resourceColor(item);
     const focusColor=operation?.effect.type==='write'?theme.write:theme.read;
-    const [a,height,c]=kinds[item.kind].size;
-    const cut=Math.min(a,c)*(item.kind==='Service'?.51:item.kind==='Pod'?.34:.22);
-    const shape=(level,inset=0)=>footprint(x,level,z,a-inset,a-inset,c-inset,c-inset,Math.max(.018,cut-inset/2));
+    const form=forms[item.kind]??forms.default;
+    const [a,fullHeight,c]=kinds[item.kind].size;
+    const age=born.has(key)&&!motion.matches?clamp((now-born.get(key))/560,0,1):1;
+    const grow=ease(age), height=Math.max(.02,fullHeight*grow);
+    const ring=(level,inset=0)=>ringPoints(form,x,level,z,a,c,inset);
     const halo=(expansion,opacity)=>{
-      const ring=footprint(x,.08,z,a+expansion,a+expansion,c+expansion,c+expansion,cut).map(project);
-      polygon(ring,alpha(focusColor,opacity*.15),alpha(focusColor,opacity),focused?1.4:1);
+      polygon(ringPoints(form,x,.08,z,a,c,-expansion).map(project),alpha(focusColor,opacity*.15),alpha(focusColor,opacity),focused?1.4:1);
     };
-
     ctx.save();
-    if (focusKeys.size&&!focused&&!chosen&&!pointed) ctx.globalAlpha=.79;
+    if (focusKeys.size&&!focused&&!chosen&&!pointed) ctx.globalAlpha=.8;
+    ctx.globalAlpha*=.35+.65*grow;
+    contactShadow(x,z,a,c,theme,light);
     if (focused||chosen||pointed) halo(.15,focused?.98:.76);
-    if (focused&&!motion.matches && now-highlightStart<850) {
+    if (focused&&!motion.matches&&now-highlightStart<850) {
       const t=clamp((now-highlightStart)/850,0,1);
       halo(.15+t*.30,.74*(1-t));
     }
     const bottom=y+(small?0:-.05), capY=bottom+height;
-    polygon(footprint(x,Math.max(.035,bottom-.02),z,a+.08,a+.08,c+.07,c+.07,cut).map(project),alpha(theme.shadow,light?.24:.62));
-    const {cap,faces}=stack([shape(bottom),shape(capY-.085),shape(capY,.056)],(tier,i)=> {
-      const side=tier===2?(i<3?.66:.49):(i===2||i===3?.48:.34);
-      return alpha(color,light?side+.29:side);
-    },alpha(color,light?.66:.51));
+    const decor=front=>{
+      if (small||view.scale<26) return;
+      const {lower,upper,i,j}=front;
+      if (form.rack) {
+        for (let k=1;k<=3;k++) {
+          const t=k*.2+.08;
+          stroke([lerp(lower[i],upper[i],t),lerp(lower[j],upper[j],t)].map((p,n)=>lerp(p,n?lerp(lower[i],lower[j],1):lerp(lower[j],lower[i],1),.12)),'rgba(5,10,20,.42)',1.6);
+        }
+        const led=lerp(lerp(lower[i],lower[j],.14),lerp(upper[i],upper[j],.14),.86);
+        dot(led[0],led[1],1.9,fault?theme.warn:theme.write);
+      }
+      if (form.door) {
+        const quad=[[.34,.05],[.66,.05],[.66,.62],[.34,.62]].map(([u,v])=>lerp(lerp(lower[i],lower[j],u),lerp(upper[i],upper[j],u),v));
+        polygon(quad,'rgba(5,10,24,.5)','rgba(255,255,255,.18)',1);
+      }
+    };
+    const inset=Math.min(a,c)*.2;
+    let body;
+    if (form.layers) {
+      const plate=height*.38, gap=height*.12;
+      prism([ring(bottom),ring(bottom+plate*.8),ring(bottom+plate,inset*.4)],color,light);
+      const start=bottom+plate+gap;
+      body=prism([ring(start),ring(start+plate*.8),ring(start+plate,inset*.4)],color,light);
+    } else {
+      body=prism([ring(bottom),ring(capY-.11*grow),ring(capY,inset*.5)],color,light,{decor});
+    }
+    const cap=body.cap;
     const [start,,,,end]=cap;
     const sheen=ctx.createLinearGradient(start[0],start[1],end[0],end[1]);
-    sheen.addColorStop(0,alpha(color,light?.90:.84));sheen.addColorStop(1,alpha(color,light?.59:.46));
-    polygon(cap,sheen,focused?focusColor:alpha(color,.92),focused?1.55:1);
-    const top=project([x,capY+.016,z]);
-    const iconSize=clamp(view.scale*(small?.26:.39),small?7:12,small?13:25);
+    sheen.addColorStop(0,tint(color,light?.12:.30,light?[20,32,56]:undefined));sheen.addColorStop(1,tint(color,light?-.12:-.06,light?[20,32,56]:undefined));
+    polygon(cap,sheen,focused?focusColor:'rgba(255,255,255,.38)',focused?1.6:1);
+    polygon(ringPoints(form,x,(form.layers?bottom+height*.38*2+height*.12:capY)+.014,z,a,c,inset*1.5).map(project),null,'rgba(255,255,255,.17)',.9);
+    const topY=form.layers?bottom+height*.88:capY;
+    const top=project([x,topY+.016,z]);
+    const iconSize=clamp(view.scale*(small?.26:.38),small?7:12,small?13:24);
+    if (!small&&iconSize>=12&&grow>.85) {
+      ctx.beginPath();ctx.arc(top[0],top[1],iconSize*.72,0,Math.PI*2);
+      ctx.fillStyle=light?'rgba(255,255,255,.34)':'rgba(6,12,26,.30)';ctx.fill();
+    }
     ctx.save();
     ctx.translate(top[0]-iconSize/2,top[1]-iconSize/2);
     ctx.scale(iconSize/24,iconSize/24);
-    ctx.strokeStyle=light?'#172947':'#f4f8ff';
-    ctx.lineWidth=1.65;ctx.lineCap='round';ctx.lineJoin='round';
+    ctx.strokeStyle=light?'#172947':'#f6f9ff';
+    ctx.lineWidth=1.7;ctx.lineCap='round';ctx.lineJoin='round';
     ctx.stroke(paths[kinds[item.kind].icon]);
     ctx.restore();
-
     if (fault&&!small) {
       const [sx,sy]=project([x+a*.60,capY+.13,z+c*.64]);
+      ctx.save();ctx.shadowColor=theme.warn;ctx.shadowBlur=10;
       dot(sx,sy,5,theme.label);dot(sx,sy,3.1,theme.warn);
+      ctx.restore();
     }
     ctx.restore();
-    return {record,key,focused,chosen,pointed,fault,cap,faces,x:top[0],y:top[1],rim:Math.max(...cap.map(p=>p[1]))};
+    return {record,key,focused,chosen,pointed,fault,cap,faces:body.faces,x:top[0],y:top[1],rim:Math.max(...cap.map(p=>p[1]))};
   }
   function pill(text,x,y,theme,{accent,priority=false,secondary=false}={}) {
     const size=secondary?10:11;
@@ -327,8 +429,10 @@ export function mountScene(canvas,{onSelect,onHover}) {
     const inner=ctx.measureText(label).width+12+(accent?8:0),height=secondary?17:19;
     const box={x:clamp(x-inner/2,4,Math.max(4,w-inner-4)),y:clamp(y,4,Math.max(4,h-height-4)),w:inner,h:height};
     return {box,paint(){
-      ctx.beginPath();ctx.roundRect(box.x,box.y,box.w,box.h,5);
-      ctx.fillStyle=theme.label;ctx.fill();
+      ctx.save();ctx.shadowColor='rgba(0,0,0,.38)';ctx.shadowBlur=7;ctx.shadowOffsetY=2;
+      ctx.beginPath();ctx.roundRect(box.x,box.y,box.w,box.h,6);
+      ctx.fillStyle=theme.label;ctx.fill();ctx.restore();
+      ctx.beginPath();ctx.roundRect(box.x,box.y,box.w,box.h,6);
       ctx.strokeStyle=alpha(accent??theme.edge,priority?.86:.56);ctx.lineWidth=1;ctx.stroke();
       if(accent)dot(box.x+7,box.y+height/2,2.5,accent);
       ctx.font=font(priority?750:650,size);ctx.fillStyle=secondary?theme.muted:theme.text;
@@ -466,6 +570,11 @@ export function mountScene(canvas,{onSelect,onHover}) {
     if (options.view==='2d') {draw2D(now,theme,light);return;}
     fit();
     const orderedDecks=[...decks].sort((a,b)=>project([a.x,0,a.z+a.length/2])[2]-project([b.x,0,b.z+b.length/2])[2]);
+    if (!light) {
+      const vignette=ctx.createRadialGradient(w/2,h*.46,Math.min(w,h)*.3,w/2,h*.46,Math.max(w,h)*.75);
+      vignette.addColorStop(0,'rgba(0,0,0,0)');vignette.addColorStop(1,'rgba(0,4,12,.42)');
+      ctx.fillStyle=vignette;ctx.fillRect(0,0,w,h);
+    }
     for(const deck of orderedDecks) drawDeck(deck,theme,light);
     if(options.links) edges.forEach((edge,index)=>drawEdge(edge,index,now,theme));
     const ordered=[...locations.values()].filter(place=>items.has(resourceKey(place.item))).sort((a,b)=>project([a.x,a.y,a.z])[2]-project([b.x,b.y,b.z])[2]);
@@ -497,7 +606,8 @@ export function mountScene(canvas,{onSelect,onHover}) {
       label.paint();occupied.push(label.box);
       hitAreas.push({key:shape.key,box:label.box});
     }
-    if(inView&&!document.hidden&&!motion.matches&&((animation&&options.links&&edges.some(edge=>edge.type==='tráfico'))||(focusKeys.size&&now-highlightStart<850))) schedule();
+    for (const [key,time] of born) if (now-time>600) born.delete(key);
+    if(inView&&!document.hidden&&!motion.matches&&((animation&&options.links&&edges.some(edge=>edge.type==='tráfico'))||(focusKeys.size&&now-highlightStart<850)||born.size)) schedule();
   }
 
   function hit(event) {
@@ -564,7 +674,10 @@ export function mountScene(canvas,{onSelect,onHover}) {
   return {
     update(next,config,select,op) {
       state=next;options=config;selected=select;
-      items=new Set(visibleResources(state,options).map(resourceKey));
+      const nextItems=new Set(visibleResources(state,options).map(resourceKey));
+      if (knownKeys) for (const key of nextItems) if (!knownKeys.has(key)) born.set(key,performance.now());
+      knownKeys=nextItems;
+      items=nextItems;
       const context=visibleResources(state,{expert:options.expert,reveal:items});
       const {places,decks:shownDecks}=layout(context);
       locations=places;
