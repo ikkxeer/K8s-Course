@@ -1,6 +1,6 @@
 # KubePath · Curso interactivo de Kubernetes
 
-KubePath reúne 18 prácticas en seis niveles. Puedes desplegar un Pod, escalar aplicaciones, inspeccionar un clúster simulado y diagnosticar incidencias desde una terminal en el navegador. El editor YAML, el explorador y la topología 3D se sincronizan con el mismo estado. Los objetivos se validan sobre los recursos y el progreso se guarda en el navegador.
+KubePath reúne 18 prácticas en seis niveles, con una ruta guiada (siguiente misión, conceptos que aprenderás, insignias por nivel), recompensas al completar cada práctica (XP, bonus sin pistas, rangos y logros) y un panel de progreso visual. Puedes desplegar un Pod, escalar aplicaciones, inspeccionar un clúster simulado y diagnosticar incidencias desde una terminal en el navegador. El editor YAML, el explorador y la topología 3D se sincronizan con el mismo estado. Los objetivos se validan sobre los recursos y el progreso se guarda en el navegador.
 
 ## Ejecutar el proyecto
 

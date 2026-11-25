@@ -1,10 +1,10 @@
 export const modules = [
-  {id:'fundamentos', title:'Fundamentos', description:'Terminal, redes, contenedores y YAML.', icon:'layers', color:'mint', lessons:['primer-pod','redes','yaml']},
-  {id:'introduccion', title:'Introducción a Kubernetes', description:'Clúster, Control Plane, Pods y namespaces.', icon:'cluster', color:'blue', lessons:['arquitectura','namespaces']},
-  {id:'despliegue', title:'Despliegue de aplicaciones', description:'Réplicas, Services, Ingress y configuración.', icon:'box', color:'violet', lessons:['replicas','servicio','configuracion','ingress','rollout']},
-  {id:'operacion', title:'Administración de clústeres', description:'Almacenamiento, memoria y planificación.', icon:'server', color:'blue', lessons:['almacenamiento','recursos']},
-  {id:'diagnostico', title:'Troubleshooting', description:'Diagnóstico basado en eventos, logs y relaciones.', icon:'pulse', color:'amber', lessons:['selector-roto','imagen-rota','memoria','incidencia-doble']},
-  {id:'avanzado', title:'Kubernetes avanzado y DevOps', description:'Control de acceso y seguridad de red.', icon:'shield', color:'violet', lessons:['rbac','politicas']}
+  {id:'fundamentos', goal:"Haz funcionar tu primera aplicación: un Pod, un Service y un manifiesto.", badge:"Primeros pasos", boss:{mode:'sandbox',label:"Practica libre en el Sandbox"}, title:'Fundamentos', description:'Terminal, redes, contenedores y YAML.', icon:'layers', color:'mint', lessons:['primer-pod','redes','yaml']},
+  {id:'introduccion', goal:"Entiende quién decide y quién ejecuta dentro de un clúster.", badge:"Explorador del clúster", boss:{mode:'sandbox',label:"Explora el clúster en el Sandbox"}, title:'Introducción a Kubernetes', description:'Clúster, Control Plane, Pods y namespaces.', icon:'cluster', color:'blue', lessons:['arquitectura','namespaces']},
+  {id:'despliegue', goal:"Publica, escala y actualiza una aplicación sin cortes.", badge:"Maestro del despliegue", boss:{mode:'desafios',label:"Supera los Desafíos"}, title:'Despliegue de aplicaciones', description:'Réplicas, Services, Ingress y configuración.', icon:'box', color:'violet', lessons:['replicas','servicio','configuracion','ingress','rollout']},
+  {id:'operacion', goal:"Dale a tus cargas disco persistente y recursos justos.", badge:"Administrador de recursos", boss:{mode:'desafios',label:"Supera los Desafíos"}, title:'Administración de clústeres', description:'Almacenamiento, memoria y planificación.', icon:'server', color:'blue', lessons:['almacenamiento','recursos']},
+  {id:'diagnostico', goal:"Diagnostica fallos reales a partir de eventos, logs y relaciones.", badge:"Bombero de producción", boss:{mode:'supervivencia',label:"Aguanta una guardia de Supervivencia"}, title:'Troubleshooting', description:'Diagnóstico basado en eventos, logs y relaciones.', icon:'pulse', color:'amber', lessons:['selector-roto','imagen-rota','memoria','incidencia-doble']},
+  {id:'avanzado', goal:"Protege quién accede y qué tráfico circula.", badge:"Guardián del clúster", boss:{mode:'certificacion',label:"Practica un simulacro de certificación"}, title:'Kubernetes avanzado y DevOps', description:'Control de acceso y seguridad de red.', icon:'shield', color:'violet', lessons:['rbac','politicas']}
 ];
 
 const objective = (text, rule, params={}) => ({text, rule, ...params});
@@ -14,6 +14,7 @@ const field = (text, type, name, key, value) => objective(text,'field',{type,nam
 const available = (name, count) => objective('Mantén '+count+' réplicas disponibles de '+name+'.','available',{name,count});
 const pods = name => objective('Comprueba que '+name+' tenga al menos un Pod listo.','ready',{name});
 const endpoints = name => objective('Recupera los endpoints listos de '+name+'.','endpoints',{name});
+const skillMap = {"primer-pod": ["Nodo", "Pod", "kubectl get", "kubectl run"], "redes": ["Puerto", "Service", "Etiquetas", "kubectl expose", "Endpoints"], "yaml": ["YAML", "Manifiesto", "ConfigMap", "kubectl apply"], "arquitectura": ["API server", "etcd", "Scheduler", "Controladores", "kubelet"], "namespaces": ["Namespace", "kubectl -n", "Ámbito de recursos"], "replicas": ["Deployment", "ReplicaSet", "kubectl scale", "Reconciliación"], "servicio": ["port / targetPort", "Selectores", "Service ≠ Deployment"], "configuracion": ["ConfigMap en uso", "Secret", "Variables de entorno"], "ingress": ["Ingress", "Reglas HTTP", "Ruta completa al Pod"], "rollout": ["Rollout", "Revisiones", "kubectl rollout", "Rollback"], "almacenamiento": ["PersistentVolume", "PersistentVolumeClaim", "Binding", "Modos de acceso"], "recursos": ["Requests", "Limits", "OOMKilled", "Planificación"], "selector-roto": ["Error 503", "kubectl describe", "Selector vs etiquetas"], "imagen-rota": ["ImagePullBackOff", "Eventos de Pod", "kubectl logs"], "memoria": ["Reinicios de Pod", "Motivo de terminación", "Memoria vs límite"], "incidencia-doble": ["Varias causas", "Validar de extremo a extremo", "Orden de diagnóstico"], "rbac": ["Role", "RoleBinding", "Mínimo privilegio", "kubectl auth can-i"], "politicas": ["NetworkPolicy", "Aislamiento de Pods", "Reglas de Ingress"]};
 const defaultLesson = {category:'Práctica guiada', seed:'empty', minutes:8, xp:80, difficulty:'Inicial'};
 
 export const lessons = Object.fromEntries([
@@ -180,7 +181,7 @@ export const lessons = Object.fromEntries([
     concept:'Selecciona un tipo, dale un nombre y crea el recurso. Para conectar un Service, usa como destino el nombre de un Deployment o Pod que comparta esa etiqueta.',
     objectives:[], hints:['Para ver tráfico, agrega un Deployment y un Service que lo seleccione.'], explanation:''
   }
-].map(lesson=>[lesson.id,{...defaultLesson,...lesson}]));
+].map(lesson=>[lesson.id,{...defaultLesson,skills:skillMap[lesson.id]??[],...lesson}]));
 
 export const modes = [
   {id:'sandbox', title:'Sandbox', icon:'terminal', description:'Prueba comandos y manifiestos en un entorno libre.', color:'mint'},
@@ -194,3 +195,7 @@ export const modes = [
 export const ranks = ['Kubernetes Rookie','Cluster Operator','Kubernetes Administrator','DevOps Engineer','Kubernetes Architect','Cluster Master'];
 export const rankThresholds = [0,240,620,1100,1700,2350];
 export const totalLessons = modules.reduce((sum,module)=>sum+module.lessons.length,0);
+
+export const lessonOrder = modules.flatMap(module=>module.lessons);
+export const allSkills = lessonOrder.flatMap(id=>lessons[id].skills.map(name=>({id:id+':'+name,name,lesson:id})));
+export const bonusRate = 0.25;

@@ -1,6 +1,7 @@
 import {lessons, modules, modes, totalLessons} from './catalog.mjs';
 import {browserStorage, readProgress, saveProgress, stats} from './progress.mjs';
-import {e,icon,iconButton,lessonUrl,dateLabel,formatNumber} from './ui.mjs';
+import {e,icon,iconButton,lessonUrl,formatNumber} from './ui.mjs';
+import {academyView,progressView} from './journey.mjs';
 
 const app=document.querySelector('#app');
 const storage=browserStorage();
@@ -35,11 +36,13 @@ function persist() {
     const current=stats(progress);
     sidebarRank.querySelector('strong').textContent=current.rank;
     sidebarRank.querySelector('small').textContent='Nivel '+current.level+' · '+formatNumber(current.xp)+' XP';
+    sidebarRank.querySelector('.mini-meter i').style.width=rankPct(current)+'%';
   }
 }
 function firstLesson() {
   return modules.flatMap(module=>module.lessons).find(id=>!progress.completed[id])??'primer-pod';
 }
+const rankPct = s => s.goal?Math.round((s.xp-s.step)/(s.goal-s.step)*100):100;
 const progressOf = module => module.lessons.filter(id=>progress.completed[id]).length;
 const initials = () => (progress.profile.name.trim().split(/\s+/).map(word=>word[0]).slice(0,2).join('')||'KP').toUpperCase();
 const chip = (name,color) => '<span class="icon-tile '+color+'">'+icon(name,21)+'</span>';
@@ -55,7 +58,7 @@ function shell(view,crumb) {
         <nav aria-label="Navegación principal">
           ${navigation.map(group=>`<div class="nav-group"><p>${group.label}</p>${group.items.map(([id,label,symbol])=>`<a class="nav-item ${id===view?'active':''}" href="#${id}" ${id===view?'aria-current="page"':''}>${icon(symbol,18)}<span>${label}</span>${id===view?'<i></i>':''}</a>`).join('')}</div>`).join('')}
         </nav>
-        <a href="#progreso" class="sidebar-rank"><span class="rank-shield">${icon('shield',20)}</span><span><strong>${e(s.rank)}</strong><small>Nivel ${s.level} · ${formatNumber(s.xp)} XP</small></span>${icon('chevron',15)}</a>
+        <a href="#progreso" class="sidebar-rank"><span class="rank-shield">${icon('shield',20)}</span><span><strong>${e(s.rank)}</strong><small>Nivel ${s.level} · ${formatNumber(s.xp)} XP</small><span class="mini-meter"><i style="width:${rankPct(s)}%"></i></span></span>${icon('chevron',15)}</a>
       </aside>
       <button type="button" class="mobile-overlay" data-action="menu" aria-label="Cerrar navegación"></button>
       <div class="main">
@@ -108,6 +111,11 @@ function overview() {
         <div class="timeline timeline-compact">${shown.map(module=>moduleCard(module, {compact:true})).join('')}</div>
       </section>
       <aside class="dashboard-aside" aria-label="Resumen de actividad">
+        <section class="panel rank-card">
+          <div class="daily-top"><span class="icon-tile mint">${icon('shield',20)}</span><div><h2>${e(s.rank)}</h2><p>${s.goal?formatNumber(s.goal-s.xp)+' XP para '+e(s.nextRank):'Rango máximo'}</p></div></div>
+          <div class="xp-meter" role="progressbar" aria-label="Progreso de rango" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${rankPct(s)}"><i style="width:${rankPct(s)}%"></i></div>
+          <a class="text-link" href="#progreso">Ver todo mi progreso</a>
+        </section>
         <section class="daily panel">
           <div class="daily-top"><span class="icon-tile amber">${icon('flame',20)}</span><div><h2>Racha semanal</h2><p>${s.streak?s.streak+' '+(s.streak===1?'día seguido':'días seguidos'):'Crea el hábito de practicar'}</p></div><strong>${s.streak}</strong></div>
           ${calendar(s)}
@@ -148,11 +156,7 @@ function lessonLine(id,mode) {
 function pageHead(symbol, title, description, extra='') {
   return `<header class="page-head">${chip(symbol,'mint')}<div><h1>${e(title)}</h1><p>${e(description)}</p></div>${extra}</header>`;
 }
-function academy() {
-  const s=stats(progress);
-  return `${pageHead('route','Ruta de aprendizaje','Seis niveles para pasar de los fundamentos a la operación de Kubernetes.',`<span class="tag mint">${s.finished.length} de ${totalLessons} prácticas</span>`)}
-    <div class="timeline route-map">${modules.map(module=>moduleCard(module)).join('')}</div>`;
-}
+const academy = () => academyView(progress);
 function modePage(view) {
   const mode=modes.find(item=>item.id===view);
   if (!mode) return '';
@@ -166,39 +170,7 @@ function modePage(view) {
     return `<article class="panel mode-card"><div class="mode-card-top">${chip(mode.icon,mode.color)}<span class="tag">${e(lesson.difficulty)}</span></div><h2>${e(lesson.title)}</h2><p>${e(lesson.intro)}</p><div class="mode-card-bottom"><span class="xp">+${lesson.xp} XP</span><a href="${lessonUrl(id,view)}" class="btn secondary">${icon('play',15)} Abrir práctica</a></div></article>`;
   }).join('')}</div>`;
 }
-function progressPage() {
-  const s=stats(progress);
-  const achievements=[
-    ['terminal','Primer contacto','Completa una práctica.',s.finished.length>0,'mint'],
-    ['flame','Ritmo constante','Practica tres días seguidos.',s.streak>=3 || hasPastStreak(3),'amber'],
-    ['pulse','Bajo presión','Resuelve dos incidencias.',modules[4].lessons.filter(id=>progress.completed[id]).length>=2,'violet'],
-    ['bolt','Guardia completa','Termina una sesión de Survival Mode.',progress.survival>0,'blue']
-  ];
-  const pct=s.goal?Math.round((s.xp-s.step)/(s.goal-s.step)*100):100;
-  return `${pageHead('chart','Mi progreso','Consulta tu dominio, misiones y recompensas.')}
-    <div class="stats-grid">${stat('bolt','violet','Experiencia',s.xp,'XP')}${stat('flame','amber','Racha actual',s.streak,'días')}${stat('terminal','mint','Prácticas',s.finished.length,'/ '+totalLessons)}${stat('target','blue','Dominio de la ruta',s.pct,'%')}</div>
-    <div class="progress-grid">
-      <section class="panel progress-panel"><h2>Rango profesional</h2><div class="rank-large">${chip('shield','mint')}<div><h3>${e(s.rank)}</h3><p>Nivel ${s.level}</p></div></div>${smallProgress(pct,'Rango profesional')}<p>${s.goal?`${s.goal-s.xp} XP para ${e(s.nextRank)}`:'Has alcanzado el rango más alto.'}</p></section>
-      <section class="panel progress-panel"><h2>Misiones</h2><p>${s.daily?'Misión diaria completada.':'Valida una práctica hoy.'}</p><p>${s.weekly>=3?'Misión semanal completada.':'Completa tres prácticas distintas esta semana.'}</p>${smallProgress(Math.min(100,Math.round(s.weekly/3*100)),'Misión semanal')}<p>${Math.min(s.weekly,3)} / 3 esta semana</p></section>
-    </div>
-    <section class="panel progress-panel"><h2>Dominio por módulo</h2><div class="mastery-grid">${modules.map(module=>{
-      const done=progressOf(module);
-      return `<div><div class="mastery-label"><h3>${e(module.title)}</h3><span>${done} / ${module.lessons.length}</span></div>${smallProgress(Math.round(done/module.lessons.length*100),module.title)}</div>`;
-    }).join('')}</div></section>
-    <section class="panel progress-panel"><h2>Logros</h2><div class="achievements">${achievements.map(([symbol,title,description,unlocked,color])=>`<article class="${unlocked?'earned':'unearned'}">${chip(symbol,unlocked?color:'muted')}<h3>${e(title)}</h3><p>${e(description)}</p><span class="tag ${unlocked?'mint':''}">${unlocked?'Desbloqueado':'Pendiente'}</span></article>`).join('')}</div></section>
-    <section class="panel progress-panel"><h2>Actividad reciente</h2>${s.finished.length?`<ul class="activity">${s.finished.sort((a,b)=>progress.completed[b].localeCompare(progress.completed[a])).slice(0,10).map(id=>`<li>${icon('check',17)}<a href="${lessonUrl(id)}">${e(lessons[id].title)}</a><span>${dateLabel(progress.completed[id])} · +${lessons[id].xp} XP</span></li>`).join('')}</ul>`:'<p>Completa la primera práctica para ver tu actividad aquí.</p>'}</section>`;
-}
-function hasPastStreak(target) {
-  const days=Object.keys(progress.days).filter(day=>progress.days[day].length).sort();
-  let count=0,last=0;
-  for (const day of days) {
-    const next=Date.parse(day);
-    count=next-last===86400000?count+1:1;
-    if (count>=target) return true;
-    last=next;
-  }
-  return false;
-}
+const progressPage = () => progressView(progress);
 function settings() {
   return `${pageHead('settings','Ajustes','Personaliza tu experiencia de aprendizaje.')}
     <div class="settings-grid">

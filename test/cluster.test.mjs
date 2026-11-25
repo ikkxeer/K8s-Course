@@ -144,3 +144,17 @@ test('YAML apply reports created resources only after successful validation and 
   assert.deepEqual(applyYaml(state,lessons.yaml.template).effect,
     {type:'write',created:['ConfigMap/default/preferencias'],updated:[],removed:[]});
 });
+
+test('bonus de XP sin pistas, conceptos y logros',async()=>{
+  const {achievementStatus,unlockAchievements}=await import('../dist/achievements.mjs');
+  const p=readProgress({getItem:()=>null}), now=new Date('2026-11-25T12:00:00Z');
+  assert.equal(recordSuccess(p,lessons['primer-pod'],'academia',now,{hints:0}),100);
+  assert.equal(recordSuccess(p,lessons.redes,'academia',now,{hints:2}),90);
+  const s=stats(p,now);
+  assert.equal(s.xp,190);
+  assert.equal(s.clean,1);
+  assert.ok(s.learned.has('primer-pod:Pod'));
+  assert.deepEqual(unlockAchievements(p,now).map(a=>a.id),['primer-contacto']);
+  assert.equal(unlockAchievements(p,now).length,0);
+  assert.equal(achievementStatus(p,now).find(a=>a.id==='sin-ayuda').value,1);
+});
