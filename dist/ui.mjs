@@ -1,0 +1,50 @@
+const paths = {
+  grid:'<rect x="3.5" y="3.5" width="7" height="7" rx="1.3"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.3"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.3"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.3"/>',
+  route:'<circle cx="6" cy="5" r="2"/><circle cx="18" cy="19" r="2"/><path d="M6 7v3a2 2 0 0 0 2 2h8a2 2 0 0 1 2 2v3M15 5h5M17.5 2.5v5"/>',
+  terminal:'<rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="m7 9 3 3-3 3m6 0h4"/>',
+  pulse:'<path d="M3 12h4l3-7 4 14 3-7h4"/>',
+  target:'<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/>',
+  bolt:'<path d="m13 2-9 12h7l-1 8 10-12h-7l1-8z"/>',
+  award:'<circle cx="12" cy="9" r="5.5"/><path d="m8.5 13-2 8 5.5-3 5.5 3-2-8"/>',
+  layers:'<path d="m12 3 9 5-9 5-9-5 9-5zm-9 9 9 5 9-5m-18 4 9 5 9-5"/>',
+  chart:'<path d="M4 4v15.5h16M8 15v-3m4 3V8m4 7V5"/>',
+  settings:'<circle cx="12" cy="12" r="3"/><path d="M19 13.5 21 12l-2-1.5-.6-1.6.3-2.4-2.4.3-1.6-.6L13.5 4h-3L9 6.2l-1.6.6-2.4-.3.3 2.4-.6 1.6L3 12l1.7 1.5.6 1.6-.3 2.4 2.4-.3 1.6.6 1.5 2.2h3l1.2-2.2 1.6-.6 2.4.3-.3-2.4z"/>',
+  search:'<circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 5 5"/>',
+  sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19m0-14-1.5 1.5m-11 11L5 19"/>',
+  moon:'<path d="M20.7 15.1A8.5 8.5 0 0 1 8.9 3.3 8.6 8.6 0 1 0 20.7 15z"/>',
+  chevron:'<path d="m9 6 6 6-6 6"/>',
+  down:'<path d="m6 9 6 6 6-6"/>',
+  play:'<path fill="currentColor" stroke="none" d="M8 4.8v14.4a.8.8 0 0 0 1.2.7l11.1-7.2a.8.8 0 0 0 0-1.4L9.2 4.1a.8.8 0 0 0-1.2.7z"/>',
+  flame:'<path d="M13.4 3c.4 3.1-1 4.3-3.3 6.6-1.4-1.2-1.7-2.3-1.7-3.3-2.5 2.7-4.2 5-4.2 7.6a7.8 7.8 0 0 0 15.6 0c0-4.2-2.7-8.5-6.4-10.9z"/><path d="M13.2 13c1.2 1.1 2 2.2 2 3.6a3.2 3.2 0 0 1-6.4 0c0-1.4.9-2.6 2-3.6.3 1.3 1.3 1.3 2 0z"/>',
+  cluster:'<rect x="9" y="3" width="6" height="5" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1"/><rect x="15" y="16" width="6" height="5" rx="1"/><path d="M12 8v5m-6 3v-3h12v3"/>',
+  box:'<path d="m12 3 9 5v8l-9 5-9-5V8zM3 8l9 5 9-5m-9 5v8m-4-15.8 9 5"/>',
+  server:'<rect x="4" y="4" width="16" height="6" rx="1.5"/><rect x="4" y="14" width="16" height="6" rx="1.5"/><path d="M8 7h.01M8 17h.01m4-10h4m-4 10h4"/>',
+  shield:'<path d="M12 3 4 6v5c0 4.7 3.2 8.1 8 10 4.8-1.9 8-5.3 8-10V6z"/><path d="m9 12 2 2 4-4"/>',
+  clock:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/>',
+  check:'<path d="m5 12 4 4L19 6"/>',
+  circle:'<circle cx="12" cy="12" r="8"/>',
+  book:'<path d="M12 6C9 4 6 4 3 5v13c3-1 6-1 9 1 3-2 6-2 9-1V5c-3-1-6-1-9 1zm0 0v13"/>',
+  menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',
+  close:'<path d="m6 6 12 12m0-12L6 18"/>',
+  bulb:'<path d="M8.5 17c0-3-3-3.7-3-7.2a6.5 6.5 0 1 1 13 0c0 3.5-3 4.2-3 7.2zM9 20h6m-3-3v-5"/>',
+  rotate:'<path d="M4 10a8 8 0 1 1 1.8 7.4M4 5v5h5"/>',
+  code:'<path d="m8 6-5 6 5 6m8-12 5 6-5 6m-3-14-2 16"/>',
+  info:'<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5m0-8h.01"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  minus:'<path d="M5 12h14"/>',
+  move:'<path d="M12 3v18M3 12h18m-12-6 3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3m12-6 3 3-3 3"/>',
+  download:'<path d="M12 3v12m-4-4 4 4 4-4M4 16v4h16v-4"/>',
+  filter:'<path d="M4 6h16M7 12h10m-7 6h4"/>',
+  link:'<path d="m10 14 4-4m-5 6-2 2a3.5 3.5 0 0 1-5-5l4-4a3.5 3.5 0 0 1 5 0m4-1 2-2a3.5 3.5 0 0 1 5 5l-4 4a3.5 3.5 0 0 1-5 0"/>',
+  warning:'<path d="M12 3 2.5 20h19zM12 9v4m0 3h.01"/>',
+  spark:'<path d="m12 2 2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4L12 2z"/>',
+  database:'<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/>',
+  user:'<circle cx="12" cy="8" r="4"/><path d="M4 21v-2a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v2"/>',
+  log:'<path d="M6 3h9l4 4v14H6zM14 3v5h5M9 12h7m-7 4h7"/>'
+};
+export const icon = (name,size=20) => '<svg aria-hidden="true" width="'+size+'" height="'+size+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+(paths[name]??paths.box)+'</svg>';
+export const e = value => String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+export const lessonUrl = (id,mode='academia') => '#lab/'+mode+'/'+id;
+export const iconButton = (action,label,name) => '<button class="icon-btn" type="button" data-action="'+action+'" aria-label="'+e(label)+'" title="'+e(label)+'">'+icon(name,19)+'</button>';
+export const dateLabel = date => new Intl.DateTimeFormat('es',{day:'numeric',month:'short'}).format(new Date(date));
+export const formatNumber = number => new Intl.NumberFormat('es-ES').format(number);

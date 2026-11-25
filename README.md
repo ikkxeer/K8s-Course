@@ -1,0 +1,36 @@
+# KubePath · Curso interactivo de Kubernetes
+
+KubePath reúne 18 prácticas en seis niveles. Puedes desplegar un Pod, escalar aplicaciones, inspeccionar un clúster simulado y diagnosticar incidencias desde una terminal en el navegador. El editor YAML, el explorador y la topología 3D se sincronizan con el mismo estado. Los objetivos se validan sobre los recursos y el progreso se guarda en el navegador.
+
+## Ejecutar el proyecto
+
+La aplicación estática vive en `dist/`. No necesita un paso de compilación.
+
+```sh
+python3 -m http.server 4173 --directory dist
+```
+
+Abre [http://localhost:4173](http://localhost:4173).
+
+### Docker
+
+```sh
+docker build -t kubepath .
+docker run --rm -p 4173:8080 kubepath
+```
+
+### Pruebas
+
+Requiere Node.js 22 o posterior.
+
+```sh
+npm test
+```
+
+## Alcance
+
+La Academia incluye fundamentos, arquitectura, despliegue, administración, diagnóstico y seguridad. Sandbox, Troubleshooting, Challenge Mode, Survival Mode, simulacros de certificación y el constructor visual reutilizan el motor con objetivos y flujos distintos.
+
+Los laboratorios se identifican como simulaciones. El intérprete admite un subconjunto de operaciones de `kubectl` y no inicia procesos del sistema. Los estados, el tráfico, las métricas y los eventos pertenecen al modelo didáctico. Los simulacros de certificación son material de práctica independiente.
+
+Las cuentas, la sincronización entre dispositivos y los clústeres reales aislados se describen como ampliaciones en el [documento de arquitectura](docs/arquitectura.md).
