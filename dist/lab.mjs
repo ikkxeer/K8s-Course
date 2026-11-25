@@ -1,7 +1,9 @@
-import {lessons,modules,modes} from './catalog.mjs';
+import {lessons,modules,modes,totalLessons} from './catalog.mjs';
 import {applyYaml,builderManifest,createCluster,errorStatus,eventsFor,execute,exportYaml,kinds,list,logsFor,markInspected,metricsFor,resourceKey,statusOf,validateGoals,yamlOf} from './cluster.mjs';
 import {mountScene,resourceColor,resourceGlyph,visibleResources} from './scene.mjs';
-import {recordSuccess} from './progress.mjs';
+import {recordSuccess,stats} from './progress.mjs';
+import {unlockAchievements} from './achievements.mjs';
+import {celebrate} from './celebrate.mjs';
 import {e,icon,lessonUrl} from './ui.mjs';
 
 const phases=modes.find(mode=>mode.id==='supervivencia').lessons;
@@ -92,21 +94,27 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
   const abort=new AbortController(), signal=abort.signal;
   const firstYaml=(!cert&&!challenge&&lesson.template)||defaultYaml;
   let state=createCluster(lesson.seed), editor=firstYaml, selected=null, inspect='status', current=builder?'builder':'terminal';
-  let history=[], historyIndex=0, checks=[], feedback='', success=false, helper=false, hintCount=0, credited=false;
+  let history=[], historyIndex=0, checks=[], feedback='', success=false, helper=false, hintCount=0, credited=false, celebrateLater=null;
   let operation=null, revealAffected=false;
   const options={expert:builder||lesson.id==='arquitectura',namespace:'*',kind:'*',links:true,pan:false,hideErrors:lesson.category==='Incidencia'&&lesson.difficulty==='Avanzado'};
   const route=modules.flatMap(module=>module.lessons);
   const next=route[route.indexOf(lesson.id)+1];
   const back=['sandbox','constructor'].includes(mode)?'resumen':mode;
   const incident=lesson.category==='Incidencia';
+  function nextTarget() {
+    if (survival) return stage===phases.length-1?{url:'#progreso',label:'Ver mi progreso'}:{url:lessonUrl(phases[stage+1],mode),label:'Siguiente incidencia'};
+    if (mode==='academia') return next?{url:lessonUrl(next),label:'Siguiente: '+lessons[next].title}:{url:'#progreso',label:'Ver mi progreso'};
+    return {url:'#'+back,label:'Volver a '+modeNames[mode]};
+  }
 
   const guide='<aside class="lab-guide" aria-label="Guía de la práctica">'+
     (cert||challenge?'':'<section class="panel lab-guide-card">'+title('Concepto',incident?'pulse':'book')+'<p>'+e(lesson.concept)+'</p></section>')+
+    (lesson.skills?.length&&!cert?'<section class="panel lab-guide-card">'+title('Lo que dominarás','spark')+'<ul class="chip-list">'+lesson.skills.map(name=>'<li class="chip '+(progress.completed[lesson.id]?'learned':'')+'">'+e(name)+'</li>').join('')+'</ul></section>':'')+
     (lesson.objectives.length?'<section id="lab-goals" tabindex="-1" class="panel lab-guide-card goals" aria-label="Objetivos de la práctica">'+title('Objetivos','target')+'<ul id="goal-list"></ul>'+button('validate','Validar objetivos','check','primary')+'<div id="goal-feedback" aria-live="polite"></div></section>':'')+
     (cert?'<p class="lab-note">Simulacro con pistas desactivadas.</p>':'<section class="panel lab-guide-card"><button class="helper-toggle" data-lab="coach" type="button" aria-expanded="false">'+icon('spark',19)+' <span>Asistente de práctica</span>'+icon('down',15)+'</button><div id="helper-content" hidden></div></section>')+'</aside>';
 
   root.innerHTML='<div class="lab-header"><div><a class="text-link" href="#'+back+'">'+modeNames[mode]+'</a><h1>'+e(lesson.title)+'</h1><p class="lab-intro">'+e(lesson.intro)+'</p><div class="lab-meta"><span class="simulation-pill"><i></i> Simulación</span>'+
-    (lesson.minutes?'<span class="tag">'+e(lesson.difficulty)+'</span><span>'+icon('clock',15)+' '+lesson.minutes+' min</span><span class="xp">+'+lesson.xp+' XP</span>':'')+
+    (mode==='academia'&&route.includes(lesson.id)?'<span class="tag mint">Práctica '+(route.indexOf(lesson.id)+1)+' de '+route.length+'</span>':'')+(lesson.minutes?'<span class="tag">'+e(lesson.difficulty)+'</span><span>'+icon('clock',15)+' '+lesson.minutes+' min</span><span class="xp">+'+lesson.xp+' XP</span>':'')+
     (survival?'<span class="tag amber">Etapa '+(stage+1)+' / '+phases.length+'</span>':'')+
     (lesson.objectives.length?'<button type="button" class="lab-goal-link" data-lab="view-objectives" aria-controls="lab-goals">'+icon('target',15)+' <span>Objetivos</span> <strong id="goal-total"></strong></button>':'')+
     '</div></div>'+button('reset','Reiniciar','rotate')+'</div>'+
@@ -292,16 +300,26 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
     if (pending) feedback=pending===1?'Queda un objetivo pendiente.':'Quedan '+pending+' objetivos pendientes.';
     else {
       success=true;
-      const xp=recordSuccess(progress,lesson,mode);
+      const before=stats(progress);
+      const xp=recordSuccess(progress,lesson,mode,new Date(),{hints:cert?0:hintCount});
+      const after=stats(progress);
+      const unlocked=unlockAchievements(progress);
+      const owner=modules.find(module=>module.lessons.includes(lesson.id));
+      if(xp) celebrateLater={title:lesson.title,xp,bonus:progress.bonus[lesson.id]??0,level:after.level>before.level?after.rank:'',unlocked,skills:lesson.skills,done:after.finished.length,total:totalLessons,moduleDone:mode==='academia'&&!!owner&&owner.lessons.every(id=>progress.completed[id])&&!owner.lessons.every(id=>before.finished.includes(id))};
       if(survival) {
         stageSave(stage+1);
         if(stage===phases.length-1&&!credited) {progress.survival++;credited=true;}
       }
       feedback=(survival&&stage===phases.length-1?'Guardia completada':'Práctica completada')+(xp?' · +'+xp+' XP':'');
       q('[data-lab="validate"]').disabled=true;
-      toast(feedback);
+      if(!celebrateLater) toast(feedback);
     }
     persist();
+    if(celebrateLater) {
+      const target=nextTarget();
+      celebrate({...celebrateLater,next:target?.url,nextLabel:target?.label});
+      celebrateLater=null;
+    }
     refresh();
   }
   function applyEditor(validateOnly) {
