@@ -688,3 +688,8 @@ details.world.active>summary.world-head{border-color:color-mix(in srgb,var(--min
 @media(max-width:700px){.term-btn:not(#terminal-focus){padding:3px 6px}.term .prompt-name b{display:none}}
 .lab-tools{grid-template-columns:minmax(0,1.7fr) minmax(0,1fr)}
 @media(max-width:1500px){.term-btn span{display:none}.term-btn{padding:4px 7px}}
+
+/* ── Escena WebGL bajo el lienzo de etiquetas ── */
+.scene-stage canvas.gl-layer{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}
+.scene-stage canvas[tabindex]{position:relative;z-index:1}
+.scene-tools,.scene-hover{z-index:2}

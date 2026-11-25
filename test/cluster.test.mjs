@@ -186,3 +186,10 @@ test('los errores de comando son comprensibles',()=>{
   assert.match(execute(state,'kubectl sc').text,/kubectl scale/);
   assert.match(execute(state,'kubectl rollout his').text,/status, history o undo/);
 });
+
+test('todas las prácticas se pueden abrir y validar desde su estado inicial',()=>{
+  for (const lesson of Object.values(lessons)) {
+    const state=createCluster(lesson.seed);
+    assert.doesNotThrow(()=>validateGoals(state,lesson),lesson.id);
+  }
+});
