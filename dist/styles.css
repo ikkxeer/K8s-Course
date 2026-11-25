@@ -563,3 +563,4 @@ select{appearance:none;padding-right:28px;background-image:url("data:image/svg+x
 @media(max-width:750px){.mission-hero,.progress-hero{flex-direction:column;align-items:flex-start}.skills-board{grid-template-columns:1fr}.ladder{grid-template-columns:repeat(3,1fr);row-gap:12px}.ladder li:nth-child(4)::before{display:none}}
 @media(max-width:510px){.stats-5,.ach-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.world-side{display:none}.quest-top{flex-direction:column;gap:3px}.world-reward{flex-wrap:wrap;margin-left:0}.quest{padding-left:14px}.quest-step{padding-left:26px}.quest-node{left:-14px}.ring{width:110px;height:110px}}
 @media(prefers-reduced-motion:reduce){.ring-fill,.quest-step.current .quest-node,.celebrate{animation:none}}
+.goal-hint{display:block;margin-top:3px;color:var(--amber);font-size:.76rem;font-weight:600}.goal-hint svg{vertical-align:-1px}

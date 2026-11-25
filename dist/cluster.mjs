@@ -711,6 +711,16 @@ export function execute(state,input,editor='') {
   } catch (error) {return {ok:false,text:'Error: '+error.message};}
 }
 
+export function goalHint(state,goal) {
+  if (goal.rule!=='endpoints') return '';
+  const svc=resourceBy(state,'Service',goal.name);
+  if (!svc) return 'Todavía no existe el Service '+goal.name+'.';
+  if (!svc.status?.endpoints?.length) return 'Ningún Pod coincide con el selector del Service.';
+  if (!svc.status.reachable.length) return 'Hay Pods seleccionados, pero una política bloquea el tráfico entrante.';
+  if (!svc.status.reachable.every(key=>state.resources[key]?.metadata?.labels?.app==='atlas')) return 'El Service selecciona Pods que no son de atlas.';
+  if (!svc.spec.ports.some(port=>(port.targetPort??port.port)===80 || (port.targetPort??port.port)==='http')) return 'Hay endpoints, pero el targetPort no es 80, el puerto donde escucha nginx. Usa --target-port=80 (o --port=80).';
+  return '';
+}
 export function validateGoals(state,lesson) {
   return lesson.objectives.map(goal=>{
     const resource=goal.type && goal.name ? resourceBy(state,goal.type,goal.name,goal.ns??'default'):null;

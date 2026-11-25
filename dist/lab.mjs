@@ -1,5 +1,5 @@
 import {lessons,modules,modes,totalLessons} from './catalog.mjs';
-import {applyYaml,builderManifest,createCluster,errorStatus,eventsFor,execute,exportYaml,kinds,list,logsFor,markInspected,metricsFor,resourceKey,statusOf,validateGoals,yamlOf} from './cluster.mjs';
+import {applyYaml,builderManifest,createCluster,errorStatus,eventsFor,execute,exportYaml,kinds,list,logsFor,markInspected,metricsFor,resourceKey,statusOf,validateGoals,goalHint,yamlOf} from './cluster.mjs';
 import {mountScene,resourceColor,resourceGlyph,visibleResources} from './scene.mjs';
 import {recordSuccess,stats} from './progress.mjs';
 import {unlockAchievements} from './achievements.mjs';
@@ -239,7 +239,7 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
     checks=validateGoals(state,lesson);
     if(!checks.length) return;
     q('#goal-total').textContent=checks.filter(Boolean).length+' / '+checks.length;
-    q('#goal-list').innerHTML=lesson.objectives.map((goal,i)=>'<li class="'+(checks[i]?'met':'')+'">'+icon(checks[i]?'check':'circle',16)+'<span class="visually-hidden">'+(checks[i]?'Cumplido: ':'Pendiente: ')+'</span>'+e(goal.text)+'</li>').join('');
+    q('#goal-list').innerHTML=lesson.objectives.map((goal,i)=>'<li class="'+(checks[i]?'met':'')+'">'+icon(checks[i]?'check':'circle',16)+'<span class="visually-hidden">'+(checks[i]?'Cumplido: ':'Pendiente: ')+'</span>'+e(goal.text)+(!checks[i]&&goalHint(state,goal)?'<small class="goal-hint">'+icon('bulb',12)+' '+e(goalHint(state,goal))+'</small>':'')+'</li>').join('');
     let link='';
     if (success&&mode==='academia'&&next) link='<a class="btn secondary small" href="'+lessonUrl(next)+'">Siguiente práctica</a>';
     if (success&&survival) link=stage===phases.length-1?'<a class="btn secondary small" href="#progreso">Ver progreso</a>':'<a class="btn primary small" href="'+lessonUrl(phases[stage+1],mode)+'">Siguiente incidencia</a>';
