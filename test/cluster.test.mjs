@@ -177,3 +177,12 @@ test('las órdenes kubectl de las pistas se ejecutan en orden en el escenario de
     }
   }
 });
+
+test('los errores de comando son comprensibles',()=>{
+  const state=createCluster();
+  const unknown=execute(state,'kubectl foo');
+  assert.equal(unknown.ok,false);
+  assert.match(unknown.text,/Comando desconocido/);
+  assert.match(execute(state,'kubectl sc').text,/kubectl scale/);
+  assert.match(execute(state,'kubectl rollout his').text,/status, history o undo/);
+});

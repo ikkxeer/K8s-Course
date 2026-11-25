@@ -17,7 +17,7 @@ const storedView=()=>{try{return localStorage.getItem('kubepath.vista')==='2d'?'
 const saveView=value=>{try{localStorage.setItem('kubepath.vista',value);}catch{}};
 const kindInfo={Cluster:'El conjunto completo de máquinas',Node:'Una máquina del clúster',Namespace:'Carpeta para separar recursos',Component:'Pieza interna del Control Plane',Deployment:'Gestiona las réplicas de una app',ReplicaSet:'Mantiene el número de Pods',Pod:'Tu contenedor en ejecución',Container:'Proceso dentro de un Pod',Service:'Dirección estable hacia los Pods',Ingress:'Entrada HTTP desde fuera',ConfigMap:'Configuración',Secret:'Datos sensibles',PersistentVolume:'Disco disponible',PersistentVolumeClaim:'Petición de disco',Role:'Conjunto de permisos',RoleBinding:'Asigna permisos a un usuario',NetworkPolicy:'Regla de red'};
 const richHint=text=>e(text).replace(/`([^`]+)`/g,(match,code)=>/^kubectl /.test(code)?'<button type="button" class="cmd" data-lab="use-cmd" data-cmd="'+code+'" title="Pegar en la terminal">'+code+'</button>':'<code>'+code+'</code>');
-const hello='Clúster simulado iniciado. Escribe kubectl help para consultar los comandos disponibles.';
+const hello='Clúster simulado listo. Aquí no puedes romper nada.\nEscribe un comando y pulsa Enter.   Tab completa · ↑ repite el anterior.\n  kubectl get pods';
 const stageRead=()=>{try{return Number(sessionStorage.getItem(stageKey)??0);}catch{return 0;}};
 const stageSave=n=>{try{sessionStorage.setItem(stageKey,String(n));}catch{}};
 const button=(id,label,symbol,style='secondary small')=>'<button type="button" class="btn '+style+'" data-lab="'+id+'">'+(symbol?icon(symbol,16):'')+e(label)+'</button>';
@@ -50,10 +50,43 @@ function coach(state,lesson,done,attempts) {
   if (goal?.rule==='available') return 'Compara las réplicas deseadas con las disponibles. Si difieren, revisa los eventos.';
   return 'Verifica el tipo, el namespace, el nombre y los campos del recurso que pide el primer objetivo pendiente.';
 }
+
+const verbs=['get','describe','logs','top','run','create','expose','scale','set','rollout','label','patch','apply','delete','config','help'];
+const words=['pods','deployments','services','nodes','namespaces','events','endpoints','configmaps','secrets','ingress','pv','pvc','components','replicasets','roles','rolebindings','networkpolicies','--image=','--replicas=','--port=','--target-port=','--name=','--requests=memory=','--limits=memory=','--show-labels','-n','-o','-A'];
+function cmdHtml(text) {
+  let index=0;
+  return text.split(/(\s+)/).map(token=>{
+    if (!token.trim()) return token;
+    const safe=e(token), position=index++;
+    if (position===0&&token==='kubectl') return '<span class="tk-bin">'+safe+'</span>';
+    if (position===1&&/^[a-z]+$/.test(token)) return '<span class="tk-verb">'+safe+'</span>';
+    if (token.startsWith('-')) return '<span class="tk-flag">'+safe+'</span>';
+    if (/^<.*>$/.test(token)) return '<span class="tk-ph">'+safe+'</span>';
+    return safe;
+  }).join('');
+}
+const tone=(text)=>e(text)
+  .replace(/\b(Running|Ready|Activo|Active|Disponible|Bound|Operativo|Normal|SessionStarted|Configured|creado|modificado|aplicado|configurado|eliminado)\b/g,'<span class="t-ok">$1</span>')
+  .replace(/\b(Pending|ContainerCreating|Terminating)\b/g,'<span class="t-wait">$1</span>')
+  .replace(/\b(ImagePullBackOff|CrashLoopBackOff|OOMKilled|NotReady|Degradado|Sin endpoints|Bloqueado|Sin ruta|Warning|Error|NoReadyEndpoints)\b|(&lt;ninguno&gt;)/g,(m)=>'<span class="t-bad">'+m+'</span>');
+const isHeader=line=>/^[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ ·/]*(\s{2,}[A-ZÁÉÍÓÚÑ /·]+)+$/.test(line);
+function outputHtml(text) {
+  if (/^(apiVersion|kind):/.test(text)) {
+    const [manifest,...rest]=text.split('\n\nEventos:');
+    return highlight(manifest).trimEnd()+(rest.length?'\n\n<span class="t-dim">Eventos:</span>'+tone(rest.join('\n\nEventos:')):'');
+  }
+  return text.split('\n').map((line,i)=>{
+    if (i===0&&isHeader(line)) return '<span class="t-head">'+e(line)+'</span>';
+    if (/^\s+kubectl /.test(line)) return cmdHtml(line);
+    if (/^\s*(pwd|ls|cat|clear)\b/.test(line)) return '<span class="t-dim">'+e(line)+'</span>';
+    return tone(line);
+  }).join('\n');
+}
 function terminalTemplate() {
-  return '<div id="terminal-panel"><div class="terminal-body" role="log" aria-live="polite" aria-label="Salida de la terminal" tabindex="0"></div>'+
-    '<form id="command-form" class="prompt"><span class="prompt-name" aria-hidden="true"></span><input id="command" aria-label="Comando de terminal" autocapitalize="off" autocomplete="off" spellcheck="false" maxlength="6000" placeholder="kubectl get nodes"><button class="icon-btn" type="submit" aria-label="Ejecutar comando">'+icon('play',15)+'</button></form>'+
-    '<div class="terminal-actions"><button class="terminal-help" data-lab="help" type="button">'+icon('info',15)+' Comandos disponibles</button><button class="text-link" id="terminal-focus" data-lab="view-focus" type="button" hidden>Ver en 3D</button></div></div>';
+  return '<div id="terminal-panel" class="term"><div class="term-bar"><span class="term-dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="term-title">kubectl · <b id="term-ns">default</b></span><span class="term-actions"><button class="term-btn" id="terminal-focus" data-lab="view-focus" type="button" hidden>Ver en el clúster</button><button class="term-btn" data-lab="help" type="button" title="Ver todos los comandos disponibles" aria-label="Ver todos los comandos disponibles">'+icon('info',14)+'<span>Ayuda</span></button><button class="term-btn" data-lab="term-clear" type="button" title="Limpiar pantalla" aria-label="Limpiar pantalla">'+icon('rotate',14)+'<span>Limpiar</span></button></span></div>'+
+    '<div class="terminal-body" role="log" aria-live="polite" aria-label="Salida de la terminal" tabindex="0"></div>'+
+    '<div class="term-suggest" id="term-suggest" hidden></div>'+
+    '<form id="command-form" class="prompt"><span class="prompt-name" aria-hidden="true"></span><input id="command" aria-label="Comando de terminal" autocapitalize="off" autocomplete="off" spellcheck="false" maxlength="6000" placeholder="Escribe un comando, por ejemplo kubectl get pods"><button class="icon-btn term-send" type="submit" aria-label="Ejecutar comando">'+icon('play',14)+'</button></form></div>';
 }
 function yamlTemplate() {
   return '<div id="yaml-panel" hidden><div class="yaml-toolbar"><span>editor.yaml</span>'+button('example','Ejemplo','code')+button('yaml-check','Validar','check')+button('yaml-apply','Aplicar','play','primary small')+'</div>'+
@@ -130,7 +163,8 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
     '<div class="scene-tools">'+toolButtons.map(([action,label,symbol])=>'<button type="button" class="icon-btn" data-lab="'+action+'" title="'+label+'" aria-label="'+label+'">'+icon(symbol,17)+'</button>').join('')+'</div>'+
     '<div id="scene-hover" class="scene-hover" hidden></div></div>'+
     '<div class="scene-status"><div id="scene-operation" role="status" aria-live="polite"></div><button type="button" id="reveal-affected" class="text-link" data-lab="show-affected" hidden>Mostrar afectados</button><button type="button" id="clear-affected" class="icon-btn" data-lab="clear-affected" aria-label="Quitar resaltado" title="Quitar resaltado" hidden>'+icon('close',15)+'</button></div>'+
-    '<div class="scene-legend"><span id="kind-key" class="kind-key"></span><span id="scene-count"></span></div>'+
+    '<div class="scene-legend"><span id="kind-key" class="kind-key"></span><span id="scene-count"></span></div></section>'+
+    '<div class="lab-tools"><section class="panel console" aria-label="Herramientas del laboratorio"><div class="tabs">'+tab('terminal','Terminal',current==='terminal','terminal')+tab('yaml','YAML',false,'code')+(builder?tab('builder','Constructor',true,'layers'):'')+'</div>'+
     terminalTemplate()+yamlTemplate()+(builder?builderTemplate():'')+'</section>'+
     '<section class="panel explorer" aria-label="Explorador de recursos"><div class="explorer-head">'+title('Explorador','layers')+'<button id="resource-back" class="text-link" type="button" data-lab="resources" hidden>Ver recursos</button></div><div id="explorer-content"></div></section></div></div></div>'+
     '<dialog id="reset-dialog" class="dialog" aria-labelledby="reset-title"><h2 id="reset-title">Reiniciar laboratorio</h2><p>Se restaurarán los recursos iniciales y los cambios de esta sesión se perderán.</p><div class="reset-actions">'+button('cancel-reset','Cancelar')+button('confirm-reset','Reiniciar','rotate','primary small')+'</div></dialog>';
@@ -206,13 +240,43 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
     const lines=entries.map(([type,text])=>{
       const line=document.createElement('pre');
       line.className=type;
-      line.textContent=text;
+      if (type==='entered') {
+        const match=/^(\S+) \$ ([\s\S]*)$/.exec(text);
+        line.innerHTML='<span class="t-ns">'+e(match?.[1]??'')+'</span><span class="t-arrow">❯</span> '+cmdHtml(match?.[2]??text);
+      } else if (type==='warn') line.innerHTML='<span class="t-x">✗</span> '+tone(text);
+      else if (type==='notice') line.innerHTML=text.split('\n').map(row=>/^\s+kubectl /.test(row)?'<span class="t-dim">$</span>'+cmdHtml(row):e(row)).join('\n');
+      else line.innerHTML=outputHtml(text);
       return line;
     });
     log.append(...lines);
     while(log.childElementCount>70) log.firstElementChild.remove();
     log.scrollTop=log.scrollHeight;
-    q('.prompt-name').textContent=state.activeNs+' $';
+    q('.prompt-name').innerHTML='<b>kubepath</b><i>'+e(state.activeNs)+'</i><span>❯</span>';
+    q('#term-ns').textContent=state.activeNs;
+    drawSuggest();
+  }
+  function drawSuggest() {
+    const box=q('#term-suggest');
+    if(!box) return;
+    const ran=new Set(history);
+    const readOnly=/^kubectl (get|describe|top|rollout (status|history)|help)\b/;
+    const fromHints=[...new Set(lesson.hints.flatMap(hint=>[...hint.matchAll(/`(kubectl [^`<]+)`/g)].map(match=>match[1])))].filter(item=>readOnly.test(item)&&!ran.has(item));
+    const fallback=['kubectl get pods','kubectl get nodes','kubectl help'].filter(item=>!ran.has(item));
+    const options=(lesson.objectives.length?fromHints:fallback).slice(0,3);
+    box.hidden=!options.length||cert;
+    box.innerHTML=options.length?'<span>Prueba:</span>'+options.map(item=>'<button type="button" class="sg" data-lab="use-cmd" data-cmd="'+e(item)+'">'+cmdHtml(item)+'</button>').join(''):'';
+  }
+  function complete() {
+    const value=command.value, parts=value.split(/\s+/), word=parts.at(-1)??'';
+    const names=list(state).flatMap(item=>item.kind==='Deployment'?[item.metadata.name,'deployment/'+item.metadata.name]:[item.metadata.name]);
+    const candidates=parts.length<=1?['kubectl']:parts.length===2?verbs:[...words,...names];
+    const matches=[...new Set(candidates)].filter(item=>item.startsWith(word)&&item!==word);
+    if(!matches.length) return;
+    let common=matches[0];
+    for(const item of matches) while(!item.startsWith(common)) common=common.slice(0,-1);
+    const done=matches.length===1;
+    command.value=value.slice(0,value.length-word.length)+common+(done&&!common.endsWith('=')?' ':'');
+    if(!done&&common.length===word.length) drawLog([['notice',matches.slice(0,12).join('   ')]]);
   }
   function selectResource(key) {
     if(!state.resources[key]) return;
@@ -402,6 +466,8 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
     if(action==='zoom-in'||action==='zoom-out') scene.zoomBy(action==='zoom-in'?1.15:1/1.15);
     if(action==='camera') scene.reset();
     if(action==='help') {run('kubectl help');command.focus();}
+    if(action==='term-clear') {run('clear');command.focus();}
+    if(target.closest('.terminal-body')&&!getSelection()?.toString()) command.focus({preventScroll:true});
     if(action==='validate') validate();
     if(action==='coach') {helper=!helper;drawCoach();}
     if(action==='hint') {
@@ -463,6 +529,7 @@ export function mountLab(root,{lesson,mode,progress,persist,toast}) {
     }
   },{signal});
   command.addEventListener('keydown',event=>{
+    if(event.key==='Tab'&&!event.shiftKey) {event.preventDefault();complete();return;}
     if(!history.length||!['ArrowUp','ArrowDown'].includes(event.key)) return;
     event.preventDefault();
     historyIndex=Math.max(0,Math.min(history.length,historyIndex+(event.key==='ArrowUp'?-1:1)));
